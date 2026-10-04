@@ -1,0 +1,37 @@
+Report Desk — product film brief (no-capture mode; no website exists to crawl).
+
+WHAT IT IS
+Report Desk is an AI agent that writes a marketing agency's monthly client
+reports. It pulls each client's figures, writes the summary, then checks every
+number it just wrote against the real source data. If a figure is wrong it
+rewrites that part and checks again. Anything unusual it flags for a human to
+explain. Nothing reaches a client until someone reads it and clicks approve.
+
+WHO IT IS FOR
+Owners of 5-50 person marketing and SEO agencies in the UK and US.
+
+THE ONE MESSAGE
+You can trust it, because it catches its own mistakes and never sends without you.
+
+BEATS
+1. The pain — a roster of 20 clients; monthly reports eat days.
+2. Report Desk drafts all of them at once.
+3. HERO — it catches its own wrong number and rewrites it (the fact-check loop).
+4. Stat drop — "41 figures checked", "6 corrected before you saw them".
+5. A human approves; a branded client report goes out.
+6. End card.
+
+VERBATIM ON-SCREEN COPY
+"20 clients." / "Monthly reports." / "Three days gone."
+"Report Desk drafts all 20."
+"Draft 1 - 7 figures checked" / "1 did not match the source data"
+"Draft 2 - 7 figures checked" / "Every figure matched"
+"41 figures checked" / "6 corrected before you saw them"
+"Nothing goes out until you approve it."
+"Report Desk"
+"It writes your monthly client reports, double-checks its own numbers,
+and waits for your approval."
+
+REAL PRODUCT FACTS (do not overstate)
+- The eval suite reports 41 figures checked and 6 corrected across 6 sample clients.
+- Status colour meanings: amber = needs you, green = verified.
