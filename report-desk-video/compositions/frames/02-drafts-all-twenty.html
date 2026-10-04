@@ -1,0 +1,693 @@
+<template>
+  <style>
+    /* ── 02-drafts-all-twenty — Cartesian frame layer ───────────────────
+       Paper #F6F6F4 · ink #15181C · chrome #717A85 · hairline #E4E6E3.
+       Colour is rationed: amber #8A5A0B appears ONLY on the "Needs you"
+       pills and the KPI figure; green #136B3F ONLY on the verified
+       "Approved" pills. No hairline, label or chrome is ever a status
+       colour. Zero shadow, zero gradient, radius ≤ 2px. */
+    @font-face {
+      font-family: 'Archivo';
+      src: url('../../assets/fonts/archivo-var.woff2') format('woff2-variations');
+      font-weight: 100 900;
+      font-style: normal;
+      font-display: block;
+    }
+    @font-face {
+      font-family: 'IBM Plex Mono';
+      src: url('../../assets/fonts/plexmono-400.woff2') format('woff2');
+      font-weight: 400;
+      font-style: normal;
+      font-display: block;
+    }
+    @font-face {
+      font-family: 'IBM Plex Mono';
+      src: url('../../assets/fonts/plexmono-500.woff2') format('woff2');
+      font-weight: 500;
+      font-style: normal;
+      font-display: block;
+    }
+
+    #root {
+      position: relative;
+      width: 1920px;
+      height: 1080px;
+      overflow: hidden;
+      container-type: size;
+      font-family: 'Archivo', ui-sans-serif, system-ui, sans-serif;
+      font-weight: 400;
+      color: #15181c;
+      -webkit-font-smoothing: antialiased;
+    }
+    #root *,
+    #root *::before,
+    #root *::after {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    .f2-layer {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 1920px;
+      height: 1080px;
+      overflow: hidden;
+    }
+
+    /* full-bleed paper ground — its own full-duration clip layer */
+    #f2-ground {
+      background: #f6f6f4;
+    }
+
+    /* ── eyebrow ─────────────────────────────────────────────────────── */
+    #f2-eyebrow {
+      position: absolute;
+      top: 112px;
+      left: 268.8px;
+      font-family: 'IBM Plex Mono', ui-monospace, monospace;
+      font-weight: 500;
+      font-size: 12px;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: #717a85;
+      opacity: 0;
+    }
+
+    /* ── the table stack (rises as it grows) ─────────────────────────── */
+    /* HANDOFF IN @ t=0: #f2-rule sits at y 62% (669.6px), x 18%–82%,
+       opacity 1, scale 1, drifting left at 6px/s — it IS this table's
+       first (header) rule, and the table assembles around it. */
+    #f2-stack {
+      position: absolute;
+      top: 669.6px;
+      left: 268.8px;
+      width: 967px;
+    }
+    #f2-body {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 967px;
+      height: 500px;
+    }
+
+    #f2-head {
+      position: absolute;
+      top: -26px;
+      left: 0;
+      width: 967px;
+      height: 18px;
+      opacity: 0;
+    }
+    .f2-h {
+      position: absolute;
+      top: 0;
+      font-family: 'IBM Plex Mono', ui-monospace, monospace;
+      font-weight: 500;
+      font-size: 11px;
+      line-height: 18px;
+      letter-spacing: 2.4px;
+      text-transform: uppercase;
+      color: #717a85;
+      white-space: nowrap;
+    }
+
+    .f2-row {
+      position: absolute;
+      left: 0;
+      width: 967px;
+      height: 25px;
+      border-bottom: 1px solid #e4e6e3;
+      opacity: 0;
+    }
+    .f2-c {
+      position: absolute;
+      top: 0;
+      height: 24px;
+      line-height: 24px;
+      font-size: 13px;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+
+    /* column grid — shared by header cells and row cells */
+    .f2-c-client,
+    .f2-h-client {
+      left: 0;
+      width: 296px;
+      color: #15181c;
+    }
+    .f2-c-status,
+    .f2-h-status {
+      left: 306px;
+      width: 152px;
+    }
+    .f2-c-fact,
+    .f2-h-fact {
+      left: 466px;
+      width: 152px;
+      font-family: 'IBM Plex Mono', ui-monospace, monospace;
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+      color: #717a85;
+    }
+    .f2-c-fact {
+      opacity: 0;
+    }
+    .f2-c-flag,
+    .f2-h-flag {
+      left: 626px;
+      width: 176px;
+      color: #717a85;
+      font-size: 12.5px;
+    }
+    .f2-c-action,
+    .f2-h-action {
+      left: 810px;
+      width: 157px;
+      text-align: right;
+      font-size: 12.5px;
+      color: #717a85;
+    }
+
+    /* ── status pills — the film's only rationed colour ──────────────── */
+    .f2-pill {
+      display: inline-block;
+      height: 19px;
+      line-height: 19px;
+      padding: 0 8px 0 6px;
+      font-size: 12px;
+      letter-spacing: 0.1px;
+      white-space: nowrap;
+      transform-origin: 0% 50%;
+      opacity: 0;
+    }
+    .f2-c-status {
+      line-height: 25px;
+    }
+    .f2-pill-need {
+      color: #8a5a0b;
+    }
+    .f2-pill-ok {
+      color: #136b3f;
+    }
+    .f2-dot {
+      display: inline-block;
+      width: 5px;
+      height: 5px;
+      border-radius: 2px;
+      margin-right: 6px;
+      vertical-align: middle;
+      position: relative;
+      top: -1px;
+    }
+    .f2-dot-need {
+      background: #8a5a0b;
+    }
+    .f2-dot-ok {
+      background: #136b3f;
+    }
+
+    /* the inherited hairline — never a status colour */
+    #f2-rule {
+      position: absolute;
+      top: 0;
+      left: 76.8px;
+      width: 1228.8px;
+      height: 1px;
+      background: #e4e6e3;
+      opacity: 1;
+    }
+
+    /* ── KPI rail (right 30%) ────────────────────────────────────────── */
+    #f2-rail {
+      position: absolute;
+      top: 296px;
+      left: 1320px;
+      width: 331px;
+    }
+    .f2-kpi-rule {
+      position: absolute;
+      left: 0;
+      width: 331px;
+      height: 1px;
+      background: #e4e6e3;
+      opacity: 0;
+    }
+    .f2-kpi-label {
+      position: absolute;
+      left: 0;
+      font-family: 'IBM Plex Mono', ui-monospace, monospace;
+      font-weight: 500;
+      font-size: 11px;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: #717a85;
+      opacity: 0;
+    }
+    .f2-kpi-sub {
+      position: absolute;
+      left: 0;
+      font-size: 15px;
+      line-height: 1.5;
+      color: #717a85;
+      opacity: 0;
+    }
+    .f2-kpi-fig {
+      position: absolute;
+      left: 0;
+      font-weight: 400;
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
+      transform-origin: 0% 100%;
+      opacity: 0;
+    }
+    #f2-k1-rule { top: 0; }
+    #f2-k1-label { top: 18px; }
+    #f2-k1-fig {
+      top: 44px;
+      font-size: 86px;
+      color: #8a5a0b;
+    }
+    #f2-k1-sub { top: 146px; }
+
+    #f2-k2-rule { top: 212px; }
+    #f2-k2-label { top: 230px; }
+    #f2-k2-fig {
+      top: 254px;
+      font-size: 44px;
+      color: #15181c;
+    }
+    #f2-k2-sub { top: 310px; font-size: 14px; }
+
+    #f2-k3-rule { top: 370px; }
+    #f2-k3-label { top: 388px; }
+    #f2-k3-fig {
+      top: 412px;
+      font-size: 44px;
+      color: #15181c;
+    }
+    #f2-k3-sub { top: 468px; font-size: 14px; }
+  </style>
+
+  <div
+    id="root"
+    data-composition-id="02-drafts-all-twenty"
+    data-duration="5.5"
+    data-width="1920"
+    data-height="1080"
+  >
+    <!-- paper ground: full-duration clip layer, never on #root -->
+    <div
+      class="clip f2-layer"
+      id="f2-ground"
+      data-start="0"
+      data-duration="5.5"
+      data-track-index="0"
+    ></div>
+
+    <!-- the live dashboard, rebuilt as DOM -->
+    <div
+      class="clip f2-layer"
+      id="f2-table-layer"
+      data-start="0"
+      data-duration="5.5"
+      data-track-index="1"
+    >
+      <div id="f2-eyebrow">Report Desk · September 2026</div>
+
+      <div id="f2-stack">
+        <div id="f2-body">
+          <div id="f2-head">
+            <span class="f2-h f2-h-client">Client</span>
+            <span class="f2-h f2-h-status">Status</span>
+            <span class="f2-h f2-h-fact">Fact check</span>
+            <span class="f2-h f2-h-flag">Flagged</span>
+            <span class="f2-h f2-h-action">Action</span>
+          </div>
+      <div class="f2-row" id="f2-row-0" style="top: 0px">
+        <span class="f2-c f2-c-client">Brightwave Dental</span>
+        <span class="f2-c f2-c-status"><span class="f2-pill f2-pill-ok" id="f2-pill-0"><i class="f2-dot f2-dot-ok"></i>Approved</span></span>
+        <span class="f2-c f2-c-fact" id="f2-fig-0">5 figures</span>
+        <span class="f2-c f2-c-flag">1 to explain</span>
+        <span class="f2-c f2-c-action">View report</span>
+      </div>
+      <div class="f2-row" id="f2-row-1" style="top: 25px">
+        <span class="f2-c f2-c-client">Harbourside Law</span>
+        <span class="f2-c f2-c-status"><span class="f2-pill f2-pill-need" id="f2-pill-1"><i class="f2-dot f2-dot-need"></i>Needs you</span></span>
+        <span class="f2-c f2-c-fact" id="f2-fig-1">8 figures</span>
+        <span class="f2-c f2-c-flag">none</span>
+        <span class="f2-c f2-c-action">Review</span>
+      </div>
+      <div class="f2-row" id="f2-row-2" style="top: 50px">
+        <span class="f2-c f2-c-client">Kestrel Accounting</span>
+        <span class="f2-c f2-c-status"><span class="f2-pill f2-pill-need" id="f2-pill-2"><i class="f2-dot f2-dot-need"></i>Needs you</span></span>
+        <span class="f2-c f2-c-fact" id="f2-fig-2">7 figures</span>
+        <span class="f2-c f2-c-flag">2 to explain</span>
+        <span class="f2-c f2-c-action">Review</span>
+      </div>
+      <div class="f2-row" id="f2-row-3" style="top: 75px">
+        <span class="f2-c f2-c-client">Oakfield Veterinary</span>
+        <span class="f2-c f2-c-status"><span class="f2-pill f2-pill-need" id="f2-pill-3"><i class="f2-dot f2-dot-need"></i>Needs you</span></span>
+        <span class="f2-c f2-c-fact" id="f2-fig-3">6 figures</span>
+        <span class="f2-c f2-c-flag">1 to explain</span>
+        <span class="f2-c f2-c-action">Review</span>
+      </div>
+      <div class="f2-row" id="f2-row-4" style="top: 100px">
+        <span class="f2-c f2-c-client">Summit Fitness</span>
+        <span class="f2-c f2-c-status"><span class="f2-pill f2-pill-need" id="f2-pill-4"><i class="f2-dot f2-dot-need"></i>Needs you</span></span>
+        <span class="f2-c f2-c-fact" id="f2-fig-4">5 figures</span>
+        <span class="f2-c f2-c-flag">none</span>
+        <span class="f2-c f2-c-action">Review</span>
+      </div>
+      <div class="f2-row" id="f2-row-5" style="top: 125px">
+        <span class="f2-c f2-c-client">Verde Landscaping</span>
+        <span class="f2-c f2-c-status"><span class="f2-pill f2-pill-need" id="f2-pill-5"><i class="f2-dot f2-dot-need"></i>Needs you</span></span>
+        <span class="f2-c f2-c-fact" id="f2-fig-5">8 figures</span>
+        <span class="f2-c f2-c-flag">2 to explain</span>
+        <span class="f2-c f2-c-action">Review</span>
+      </div>
+      <div class="f2-row" id="f2-row-6" style="top: 150px">
+        <span class="f2-c f2-c-client">Ashgrove Orthodontics</span>
+        <span class="f2-c f2-c-status"><span class="f2-pill f2-pill-ok" id="f2-pill-6"><i class="f2-dot f2-dot-ok"></i>Approved</span></span>
+        <span class="f2-c f2-c-fact" id="f2-fig-6">7 figures</span>
+        <span class="f2-c f2-c-flag">1 to explain</span>
+        <span class="f2-c f2-c-action">View report</span>
+      </div>
+      <div class="f2-row" id="f2-row-7" style="top: 175px">
+        <span class="f2-c f2-c-client">Pennine Roofing</span>
+        <span class="f2-c f2-c-status"><span class="f2-pill f2-pill-need" id="f2-pill-7"><i class="f2-dot f2-dot-need"></i>Needs you</span></span>
+        <span class="f2-c f2-c-fact" id="f2-fig-7">6 figures</span>
+        <span class="f2-c f2-c-flag">none</span>
+        <span class="f2-c f2-c-action">Review</span>
+      </div>
+      <div class="f2-row" id="f2-row-8" style="top: 200px">
+        <span class="f2-c f2-c-client">Clearwater Physiotherapy</span>
+        <span class="f2-c f2-c-status"><span class="f2-pill f2-pill-need" id="f2-pill-8"><i class="f2-dot f2-dot-need"></i>Needs you</span></span>
+        <span class="f2-c f2-c-fact" id="f2-fig-8">5 figures</span>
+        <span class="f2-c f2-c-flag">2 to explain</span>
+        <span class="f2-c f2-c-action">Review</span>
+      </div>
+      <div class="f2-row" id="f2-row-9" style="top: 225px">
+        <span class="f2-c f2-c-client">Marlow & Finch Estates</span>
+        <span class="f2-c f2-c-status"><span class="f2-pill f2-pill-need" id="f2-pill-9"><i class="f2-dot f2-dot-need"></i>Needs you</span></span>
+        <span class="f2-c f2-c-fact" id="f2-fig-9">8 figures</span>
+        <span class="f2-c f2-c-flag">1 to explain</span>
+        <span class="f2-c f2-c-action">Review</span>
+      </div>
+      <div class="f2-row" id="f2-row-10" style="top: 250px">
+        <span class="f2-c f2-c-client">Northgate Opticians</span>
+        <span class="f2-c f2-c-status"><span class="f2-pill f2-pill-need" id="f2-pill-10"><i class="f2-dot f2-dot-need"></i>Needs you</span></span>
+        <span class="f2-c f2-c-fact" id="f2-fig-10">7 figures</span>
+        <span class="f2-c f2-c-flag">none</span>
+        <span class="f2-c f2-c-action">Review</span>
+      </div>
+      <div class="f2-row" id="f2-row-11" style="top: 275px">
+        <span class="f2-c f2-c-client">Riverbend Nursery</span>
+        <span class="f2-c f2-c-status"><span class="f2-pill f2-pill-ok" id="f2-pill-11"><i class="f2-dot f2-dot-ok"></i>Approved</span></span>
+        <span class="f2-c f2-c-fact" id="f2-fig-11">6 figures</span>
+        <span class="f2-c f2-c-flag">2 to explain</span>
+        <span class="f2-c f2-c-action">View report</span>
+      </div>
+      <div class="f2-row" id="f2-row-12" style="top: 300px">
+        <span class="f2-c f2-c-client">Stonebridge Plumbing</span>
+        <span class="f2-c f2-c-status"><span class="f2-pill f2-pill-need" id="f2-pill-12"><i class="f2-dot f2-dot-need"></i>Needs you</span></span>
+        <span class="f2-c f2-c-fact" id="f2-fig-12">5 figures</span>
+        <span class="f2-c f2-c-flag">1 to explain</span>
+        <span class="f2-c f2-c-action">Review</span>
+      </div>
+      <div class="f2-row" id="f2-row-13" style="top: 325px">
+        <span class="f2-c f2-c-client">Thameside Removals</span>
+        <span class="f2-c f2-c-status"><span class="f2-pill f2-pill-need" id="f2-pill-13"><i class="f2-dot f2-dot-need"></i>Needs you</span></span>
+        <span class="f2-c f2-c-fact" id="f2-fig-13">8 figures</span>
+        <span class="f2-c f2-c-flag">none</span>
+        <span class="f2-c f2-c-action">Review</span>
+      </div>
+      <div class="f2-row" id="f2-row-14" style="top: 350px">
+        <span class="f2-c f2-c-client">Wickfield Interiors</span>
+        <span class="f2-c f2-c-status"><span class="f2-pill f2-pill-need" id="f2-pill-14"><i class="f2-dot f2-dot-need"></i>Needs you</span></span>
+        <span class="f2-c f2-c-fact" id="f2-fig-14">7 figures</span>
+        <span class="f2-c f2-c-flag">2 to explain</span>
+        <span class="f2-c f2-c-action">Review</span>
+      </div>
+      <div class="f2-row" id="f2-row-15" style="top: 375px">
+        <span class="f2-c f2-c-client">Greylark Media</span>
+        <span class="f2-c f2-c-status"><span class="f2-pill f2-pill-need" id="f2-pill-15"><i class="f2-dot f2-dot-need"></i>Needs you</span></span>
+        <span class="f2-c f2-c-fact" id="f2-fig-15">6 figures</span>
+        <span class="f2-c f2-c-flag">1 to explain</span>
+        <span class="f2-c f2-c-action">Review</span>
+      </div>
+      <div class="f2-row" id="f2-row-16" style="top: 400px">
+        <span class="f2-c f2-c-client">Bramble Hill Catering</span>
+        <span class="f2-c f2-c-status"><span class="f2-pill f2-pill-ok" id="f2-pill-16"><i class="f2-dot f2-dot-ok"></i>Approved</span></span>
+        <span class="f2-c f2-c-fact" id="f2-fig-16">5 figures</span>
+        <span class="f2-c f2-c-flag">none</span>
+        <span class="f2-c f2-c-action">View report</span>
+      </div>
+      <div class="f2-row" id="f2-row-17" style="top: 425px">
+        <span class="f2-c f2-c-client">Fenwick Electrical</span>
+        <span class="f2-c f2-c-status"><span class="f2-pill f2-pill-need" id="f2-pill-17"><i class="f2-dot f2-dot-need"></i>Needs you</span></span>
+        <span class="f2-c f2-c-fact" id="f2-fig-17">8 figures</span>
+        <span class="f2-c f2-c-flag">2 to explain</span>
+        <span class="f2-c f2-c-action">Review</span>
+      </div>
+      <div class="f2-row" id="f2-row-18" style="top: 450px">
+        <span class="f2-c f2-c-client">Larkspur Wellbeing</span>
+        <span class="f2-c f2-c-status"><span class="f2-pill f2-pill-need" id="f2-pill-18"><i class="f2-dot f2-dot-need"></i>Needs you</span></span>
+        <span class="f2-c f2-c-fact" id="f2-fig-18">7 figures</span>
+        <span class="f2-c f2-c-flag">1 to explain</span>
+        <span class="f2-c f2-c-action">Review</span>
+      </div>
+      <div class="f2-row" id="f2-row-19" style="top: 475px">
+        <span class="f2-c f2-c-client">Duncroft Joinery</span>
+        <span class="f2-c f2-c-status"><span class="f2-pill f2-pill-ok" id="f2-pill-19"><i class="f2-dot f2-dot-ok"></i>Approved</span></span>
+        <span class="f2-c f2-c-fact" id="f2-fig-19">6 figures</span>
+        <span class="f2-c f2-c-flag">none</span>
+        <span class="f2-c f2-c-action">View report</span>
+      </div>
+        </div>
+
+        <!-- the film's spine: the inherited 1px hairline -->
+        <div id="f2-rule"></div>
+      </div>
+    </div>
+
+    <!-- KPI rail -->
+    <div
+      class="clip f2-layer"
+      id="f2-rail-layer"
+      data-start="0"
+      data-duration="5.5"
+      data-track-index="2"
+    >
+      <div id="f2-rail">
+        <i class="f2-kpi-rule" id="f2-k1-rule"></i>
+        <div class="f2-kpi-label" id="f2-k1-label">Needs you</div>
+        <div class="f2-kpi-fig" id="f2-k1-fig">0</div>
+        <div class="f2-kpi-sub" id="f2-k1-sub">waiting for approval</div>
+
+        <i class="f2-kpi-rule" id="f2-k2-rule"></i>
+        <div class="f2-kpi-label" id="f2-k2-label">Approved</div>
+        <div class="f2-kpi-fig" id="f2-k2-fig">5</div>
+        <div class="f2-kpi-sub" id="f2-k2-sub">ready to send</div>
+
+        <i class="f2-kpi-rule" id="f2-k3-rule"></i>
+        <div class="f2-kpi-label" id="f2-k3-label">Figures checked</div>
+        <div class="f2-kpi-fig" id="f2-k3-fig">131</div>
+        <div class="f2-kpi-sub" id="f2-k3-sub">every one traced to source</div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+  <script>
+    (function () {
+      window.__timelines = window.__timelines || {};
+      var tl = gsap.timeline({ paused: true });
+
+      /* ══ HANDOFF IN ══════════════════════════════════════════════════
+         #f2-rule arrives exactly where F1 left it: y 62% (669.6px),
+         x 18%–82% (345.6 → 1574.4), opacity 1, scale 1, drifting LEFT at
+         6px/s. A power1.out run of 7.8px over 2.6s has initial velocity
+         2·7.8/2.6 = 6px/s, so the drift matches at the seam and then
+         decays. scaleX is never touched — left/width carry the widening,
+         so scale reads 1 at both boundaries. */
+      tl.fromTo("#f2-rule", { x: 0 }, { x: -7.8, duration: 2.6, ease: "power1.out" }, 0);
+
+      /* Scene 1 (0.0–1.0s) — the rule is alone on paper, then the table
+         builds itself AROUND it: eyebrow, column headers, first rows
+         waterfall down from the hairline. The stack creeps upward as it
+         grows so the twenty rows always stay inside the frame. */
+      tl.fromTo("#f2-eyebrow", { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.42, ease: "power3.out" }, 0.22);
+      tl.fromTo("#f2-stack", { y: 0 }, { y: -274.6, duration: 2.2, ease: "power2.inOut" }, 0.40);
+
+      /* ── waterfall-entry: header + twenty rows cascade DOWN from the
+         inherited rule. Binary opacity via tl.set (never fade an arrival),
+         one direction (from below), anchors travel furthest, gaps SHRINK. */
+      tl.set("#f2-head", { opacity: 1, y: 54 }, 0.40);
+      tl.to("#f2-head", { y: 0, duration: 0.20, ease: "power4.out" }, 0.40);
+      tl.set("#f2-row-0", { opacity: 1, y: 48.0 }, 0.5);
+      tl.to("#f2-row-0", { y: 0, duration: 0.19, ease: "power4.out" }, 0.5);
+      tl.set("#f2-row-1", { opacity: 1, y: 47.1 }, 0.635);
+      tl.to("#f2-row-1", { y: 0, duration: 0.186, ease: "power4.out" }, 0.635);
+      tl.set("#f2-row-2", { opacity: 1, y: 46.2 }, 0.767);
+      tl.to("#f2-row-2", { y: 0, duration: 0.182, ease: "power4.out" }, 0.767);
+      tl.set("#f2-row-3", { opacity: 1, y: 45.3 }, 0.895);
+      tl.to("#f2-row-3", { y: 0, duration: 0.178, ease: "power4.out" }, 0.895);
+      tl.set("#f2-row-4", { opacity: 1, y: 44.4 }, 1.02);
+      tl.to("#f2-row-4", { y: 0, duration: 0.174, ease: "power4.out" }, 1.02);
+      tl.set("#f2-row-5", { opacity: 1, y: 43.5 }, 1.141);
+      tl.to("#f2-row-5", { y: 0, duration: 0.17, ease: "power4.out" }, 1.141);
+      tl.set("#f2-row-6", { opacity: 1, y: 42.6 }, 1.259);
+      tl.to("#f2-row-6", { y: 0, duration: 0.166, ease: "power4.out" }, 1.259);
+      tl.set("#f2-row-7", { opacity: 1, y: 41.7 }, 1.374);
+      tl.to("#f2-row-7", { y: 0, duration: 0.162, ease: "power4.out" }, 1.374);
+      tl.set("#f2-row-8", { opacity: 1, y: 40.8 }, 1.485);
+      tl.to("#f2-row-8", { y: 0, duration: 0.158, ease: "power4.out" }, 1.485);
+      tl.set("#f2-row-9", { opacity: 1, y: 39.9 }, 1.593);
+      tl.to("#f2-row-9", { y: 0, duration: 0.154, ease: "power4.out" }, 1.593);
+      tl.set("#f2-row-10", { opacity: 1, y: 39.0 }, 1.697);
+      tl.to("#f2-row-10", { y: 0, duration: 0.15, ease: "power4.out" }, 1.697);
+      tl.set("#f2-row-11", { opacity: 1, y: 38.1 }, 1.798);
+      tl.to("#f2-row-11", { y: 0, duration: 0.146, ease: "power4.out" }, 1.798);
+      tl.set("#f2-row-12", { opacity: 1, y: 37.2 }, 1.896);
+      tl.to("#f2-row-12", { y: 0, duration: 0.142, ease: "power4.out" }, 1.896);
+      tl.set("#f2-row-13", { opacity: 1, y: 36.3 }, 1.99);
+      tl.to("#f2-row-13", { y: 0, duration: 0.138, ease: "power4.out" }, 1.99);
+      tl.set("#f2-row-14", { opacity: 1, y: 35.4 }, 2.081);
+      tl.to("#f2-row-14", { y: 0, duration: 0.134, ease: "power4.out" }, 2.081);
+      tl.set("#f2-row-15", { opacity: 1, y: 34.5 }, 2.168);
+      tl.to("#f2-row-15", { y: 0, duration: 0.13, ease: "power4.out" }, 2.168);
+      tl.set("#f2-row-16", { opacity: 1, y: 33.6 }, 2.252);
+      tl.to("#f2-row-16", { y: 0, duration: 0.126, ease: "power4.out" }, 2.252);
+      tl.set("#f2-row-17", { opacity: 1, y: 32.7 }, 2.333);
+      tl.to("#f2-row-17", { y: 0, duration: 0.122, ease: "power4.out" }, 2.333);
+      tl.set("#f2-row-18", { opacity: 1, y: 31.8 }, 2.41);
+      tl.to("#f2-row-18", { y: 0, duration: 0.118, ease: "power4.out" }, 2.41);
+      tl.set("#f2-row-19", { opacity: 1, y: 30.9 }, 2.484);
+      tl.to("#f2-row-19", { y: 0, duration: 0.114, ease: "power4.out" }, 2.484);
+
+      /* Scene 2 (1.0–2.6s) — as each row lands its figure count writes in,
+         mono in text-secondary, on an index-derived irregular offset so
+         the arrivals never read as one synchronised dump. */
+      tl.set("#f2-fig-0", { opacity: 1, x: -7 }, 0.6);
+      tl.to("#f2-fig-0", { x: 0, duration: 0.17, ease: "power3.out" }, 0.6);
+      tl.set("#f2-fig-1", { opacity: 1, x: -7 }, 0.779);
+      tl.to("#f2-fig-1", { x: 0, duration: 0.17, ease: "power3.out" }, 0.779);
+      tl.set("#f2-fig-2", { opacity: 1, x: -7 }, 0.955);
+      tl.to("#f2-fig-2", { x: 0, duration: 0.17, ease: "power3.out" }, 0.955);
+      tl.set("#f2-fig-3", { opacity: 1, x: -7 }, 1.017);
+      tl.to("#f2-fig-3", { x: 0, duration: 0.17, ease: "power3.out" }, 1.017);
+      tl.set("#f2-fig-4", { opacity: 1, x: -7 }, 1.186);
+      tl.to("#f2-fig-4", { x: 0, duration: 0.17, ease: "power3.out" }, 1.186);
+      tl.set("#f2-fig-5", { opacity: 1, x: -7 }, 1.241);
+      tl.to("#f2-fig-5", { x: 0, duration: 0.17, ease: "power3.out" }, 1.241);
+      tl.set("#f2-fig-6", { opacity: 1, x: -7 }, 1.403);
+      tl.to("#f2-fig-6", { x: 0, duration: 0.17, ease: "power3.out" }, 1.403);
+      tl.set("#f2-fig-7", { opacity: 1, x: -7 }, 1.562);
+      tl.to("#f2-fig-7", { x: 0, duration: 0.17, ease: "power3.out" }, 1.562);
+      tl.set("#f2-fig-8", { opacity: 1, x: -7 }, 1.607);
+      tl.to("#f2-fig-8", { x: 0, duration: 0.17, ease: "power3.out" }, 1.607);
+      tl.set("#f2-fig-9", { opacity: 1, x: -7 }, 1.759);
+      tl.to("#f2-fig-9", { x: 0, duration: 0.17, ease: "power3.out" }, 1.759);
+      tl.set("#f2-fig-10", { opacity: 1, x: -7 }, 1.797);
+      tl.to("#f2-fig-10", { x: 0, duration: 0.17, ease: "power3.out" }, 1.797);
+      tl.set("#f2-fig-11", { opacity: 1, x: -7 }, 1.942);
+      tl.to("#f2-fig-11", { x: 0, duration: 0.17, ease: "power3.out" }, 1.942);
+      tl.set("#f2-fig-12", { opacity: 1, x: -7 }, 2.084);
+      tl.to("#f2-fig-12", { x: 0, duration: 0.17, ease: "power3.out" }, 2.084);
+      tl.set("#f2-fig-13", { opacity: 1, x: -7 }, 2.112);
+      tl.to("#f2-fig-13", { x: 0, duration: 0.17, ease: "power3.out" }, 2.112);
+      tl.set("#f2-fig-14", { opacity: 1, x: -7 }, 2.247);
+      tl.to("#f2-fig-14", { x: 0, duration: 0.17, ease: "power3.out" }, 2.247);
+      tl.set("#f2-fig-15", { opacity: 1, x: -7 }, 2.268);
+      tl.to("#f2-fig-15", { x: 0, duration: 0.17, ease: "power3.out" }, 2.268);
+      tl.set("#f2-fig-16", { opacity: 1, x: -7 }, 2.396);
+      tl.to("#f2-fig-16", { x: 0, duration: 0.17, ease: "power3.out" }, 2.396);
+      tl.set("#f2-fig-17", { opacity: 1, x: -7 }, 2.521);
+      tl.to("#f2-fig-17", { x: 0, duration: 0.17, ease: "power3.out" }, 2.521);
+      tl.set("#f2-fig-18", { opacity: 1, x: -7 }, 2.532);
+      tl.to("#f2-fig-18", { x: 0, duration: 0.17, ease: "power3.out" }, 2.532);
+      tl.set("#f2-fig-19", { opacity: 1, x: -7 }, 2.65);
+      tl.to("#f2-fig-19", { x: 0, duration: 0.17, ease: "power3.out" }, 2.65);
+
+      /* Scene 3 (2.6–4.1s) — spring-pop-entrance: status pills pop onto the
+         rows in a scattered (×13 mod 20) order, amber "Needs you"
+         dominating. Smooth power3.out settle, no overshoot. */
+      tl.fromTo("#f2-pill-0", { scale: 0, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.40, ease: "power3.out" }, 2.62);
+      tl.fromTo("#f2-pill-13", { scale: 0, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.40, ease: "power3.out" }, 2.675);
+      tl.fromTo("#f2-pill-6", { scale: 0, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.40, ease: "power3.out" }, 2.73);
+      tl.fromTo("#f2-pill-19", { scale: 0, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.40, ease: "power3.out" }, 2.785);
+      tl.fromTo("#f2-pill-12", { scale: 0, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.40, ease: "power3.out" }, 2.84);
+      tl.fromTo("#f2-pill-5", { scale: 0, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.40, ease: "power3.out" }, 2.895);
+      tl.fromTo("#f2-pill-18", { scale: 0, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.40, ease: "power3.out" }, 2.95);
+      tl.fromTo("#f2-pill-11", { scale: 0, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.40, ease: "power3.out" }, 3.005);
+      tl.fromTo("#f2-pill-4", { scale: 0, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.40, ease: "power3.out" }, 3.06);
+      tl.fromTo("#f2-pill-17", { scale: 0, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.40, ease: "power3.out" }, 3.115);
+      tl.fromTo("#f2-pill-10", { scale: 0, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.40, ease: "power3.out" }, 3.17);
+      tl.fromTo("#f2-pill-3", { scale: 0, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.40, ease: "power3.out" }, 3.225);
+      tl.fromTo("#f2-pill-16", { scale: 0, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.40, ease: "power3.out" }, 3.28);
+      tl.fromTo("#f2-pill-9", { scale: 0, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.40, ease: "power3.out" }, 3.335);
+      tl.fromTo("#f2-pill-2", { scale: 0, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.40, ease: "power3.out" }, 3.39);
+      tl.fromTo("#f2-pill-15", { scale: 0, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.40, ease: "power3.out" }, 3.445);
+      tl.fromTo("#f2-pill-8", { scale: 0, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.40, ease: "power3.out" }, 3.5);
+      tl.fromTo("#f2-pill-1", { scale: 0, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.40, ease: "power3.out" }, 3.555);
+      tl.fromTo("#f2-pill-14", { scale: 0, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.40, ease: "power3.out" }, 3.61);
+      tl.fromTo("#f2-pill-7", { scale: 0, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.40, ease: "power3.out" }, 3.665);
+
+      /* The KPI rail answers alongside — counting-dynamic-scale: the value
+         counts 0→15 while the transform scale grows 0.55→1 at the same
+         position and ease. Font size is static; only transform moves. */
+      tl.fromTo("#f2-k1-rule", { opacity: 0 }, { opacity: 1, duration: 0.3, ease: "power2.out" }, 2.55);
+      tl.fromTo("#f2-k1-label", { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: 0.34, ease: "power3.out" }, 2.62);
+
+      var needs = document.getElementById("f2-k1-fig");
+      var state = { value: 0 };
+      tl.fromTo("#f2-k1-fig", { opacity: 0 }, { opacity: 1, duration: 0.2, ease: "none" }, 2.70);
+      tl.to(
+        state,
+        {
+          value: 15,
+          duration: 1.25,
+          ease: "power3.out",
+          onUpdate: function () {
+            needs.textContent = Math.round(state.value);
+          },
+        },
+        2.70,
+      );
+      tl.fromTo("#f2-k1-fig", { scale: 0.55 }, { scale: 1, duration: 1.25, ease: "power3.out" }, 2.70);
+      tl.fromTo("#f2-k1-sub", { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: 0.4, ease: "power3.out" }, 3.05);
+
+      tl.fromTo("#f2-k2-rule", { opacity: 0 }, { opacity: 1, duration: 0.28, ease: "power2.out" }, 3.45);
+      tl.fromTo("#f2-k2-label", { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: 0.32, ease: "power3.out" }, 3.52);
+      tl.fromTo("#f2-k2-fig", { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.36, ease: "power3.out" }, 3.60);
+      tl.fromTo("#f2-k2-sub", { opacity: 0 }, { opacity: 1, duration: 0.32, ease: "power2.out" }, 3.70);
+
+      tl.fromTo("#f2-k3-rule", { opacity: 0 }, { opacity: 1, duration: 0.28, ease: "power2.out" }, 3.72);
+      tl.fromTo("#f2-k3-label", { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: 0.32, ease: "power3.out" }, 3.79);
+      tl.fromTo("#f2-k3-fig", { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.36, ease: "power3.out" }, 3.87);
+      tl.fromTo("#f2-k3-sub", { opacity: 0 }, { opacity: 1, duration: 0.32, ease: "power2.out" }, 3.97);
+
+      /* Scene 4 (4.1–5.5s) — the table recedes to 55% (no blur) and the
+         inherited rule alone rises and widens, then stops dead.
+         ══ HANDOFF OUT ══ at t=5.5 the rule reads y 30% (324px),
+         x 14%–86% (268.8 → 1651.2), opacity 1, scale 1, 0px/s.
+         Stack y is held at −274.6 ⇒ rule top 395px; its own −71 lands it
+         on 324. left 7.8 cancels the −7.8 drift so the span is exact.
+         Nothing moves from t=4.75 to t=5.5. */
+      tl.to("#f2-body", { opacity: 0.55, duration: 0.5, ease: "power2.out" }, 4.10);
+      tl.fromTo(
+        "#f2-rule",
+        { y: 0, left: 76.8, width: 1228.8 },
+        { y: -71, left: 7.8, width: 1382.4, duration: 0.65, ease: "power3.out" },
+        4.10,
+      );
+
+      window.__timelines["02-drafts-all-twenty"] = tl;
+      tl.seek(0);
+    })();
+  </script>
+</template>
