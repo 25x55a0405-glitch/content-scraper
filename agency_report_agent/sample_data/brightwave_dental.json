@@ -1,0 +1,32 @@
+{
+  "client_name": "Brightwave Dental",
+  "agency_name": "Northstar Digital",
+  "period": "September 2026",
+  "previous_period": "August 2026",
+  "currency": "£",
+  "channels": {
+    "organic_search": {
+      "sessions": 4120,
+      "prev_sessions": 3580,
+      "conversions": 86,
+      "prev_conversions": 71
+    },
+    "paid_search": {
+      "sessions": 2650,
+      "prev_sessions": 2900,
+      "conversions": 143,
+      "prev_conversions": 120,
+      "spend": 3200,
+      "prev_spend": 3100
+    },
+    "social": {
+      "sessions": 1870,
+      "prev_sessions": 990,
+      "conversions": 24,
+      "prev_conversions": 20
+    }
+  },
+  "goals": {
+    "monthly_leads_target": 240
+  }
+}

@@ -1,0 +1,8 @@
+# Mock mode (free, no API key) needs only langgraph:
+langgraph>=0.2.0
+
+# Live mode (uses Claude to write the draft) also needs:
+langchain-anthropic>=0.3.0
+
+# Optional: lets the tool read an ANTHROPIC_API_KEY from a .env file.
+python-dotenv>=1.0.0

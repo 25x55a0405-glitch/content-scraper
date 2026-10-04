@@ -1,0 +1,12 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Secrets and local config
+.env
+
+# Generated reports (keep the code, not the output)
+agency_report_agent/output/*.md
