@@ -1,15 +1,16 @@
-"""Run the Agency Report Agent from the command line.
+"""Run Report Desk from the command line, without the web app.
 
-Examples
---------
-Free demo, no API key, watch the number-check loop catch a mistake:
-    python -m agency_report_agent.cli --demo-glitch
+Most of the time you want the web app instead:
 
-Free demo, auto-approve (no prompt), good for a quick run:
-    python -m agency_report_agent.cli --auto-approve
+    python -m agency_report_agent.web
 
-Live mode with Claude (needs ANTHROPIC_API_KEY in your environment or .env):
-    python -m agency_report_agent.cli --live
+This command line is for a quick check that everything works, and for seeing
+the fact-checking loop in plain text.
+
+    python -m agency_report_agent.cli                 # draft every client, free
+    python -m agency_report_agent.cli --demo-glitch   # watch it catch a wrong figure
+    python -m agency_report_agent.cli --approve-all   # also approve and produce reports
+    python -m agency_report_agent.cli --live          # write with Claude (needs a key)
 """
 
 from __future__ import annotations
@@ -17,58 +18,60 @@ from __future__ import annotations
 import argparse
 import os
 
-from .graph import build_graph
+from . import batch
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Draft and self-check a client marketing report.")
-    parser.add_argument(
-        "--client",
-        default=os.path.join(os.path.dirname(__file__), "sample_data", "brightwave_dental.json"),
-        help="Path to the client's data file (JSON).",
-    )
-    parser.add_argument("--live", action="store_true", help="Use Claude to write the draft (costs tokens).")
-    parser.add_argument("--auto-approve", action="store_true", help="Skip the human approval prompt.")
+    parser = argparse.ArgumentParser(description="Draft and fact-check this month's client reports.")
+    parser.add_argument("--live", action="store_true", help="Write the drafts with Claude (costs tokens).")
     parser.add_argument(
         "--demo-glitch",
         action="store_true",
-        help="Inject one wrong number on the first draft to show the verification loop working.",
+        help="Plant one wrong figure in each first draft, to show the fact-check working.",
     )
-    parser.add_argument("--max-verify", type=int, default=3, help="Max times the number-check loop may retry.")
+    parser.add_argument(
+        "--approve-all",
+        action="store_true",
+        help="Approve everything automatically and produce the reports (skips the human step).",
+    )
+    parser.add_argument("--start-over", action="store_true", help="Begin a fresh round of reports.")
     args = parser.parse_args()
 
-    # Load a .env file if python-dotenv is installed (optional convenience).
     try:
         from dotenv import load_dotenv
 
         load_dotenv()
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 — python-dotenv is optional
         pass
 
-    graph = build_graph()
+    if args.start_over:
+        batch.start_over()
+        print("Started a fresh round.")
 
-    initial_state = {
-        "client_file": args.client,
-        "use_llm": args.live,
-        "auto_approve": args.auto_approve,
-        "demo_glitch": args.demo_glitch,
-        "max_verify_attempts": args.max_verify,
-        "agent_model": os.environ.get("AGENT_MODEL"),
-        "log": [],
-    }
+    mode = "LIVE (Claude)" if args.live else "FREE (no API key)"
+    print(f"\nReport Desk — {mode}\n" + "-" * 56)
 
-    mode = "LIVE (Claude)" if args.live else "MOCK (free, no API key)"
-    print(f"\nAgency Report Agent — {mode}\n" + "-" * 40)
+    result = batch.run_all(use_llm=args.live, demo_glitch=args.demo_glitch)
+    print(f"Drafted {result['started']} report(s).\n")
 
-    final = graph.invoke(initial_state)
+    for row in batch.overview()["clients"]:
+        line = f"  {row['name']:<24} {row['label']:<20} {row['figures_checked']} figures"
+        if row["corrections"]:
+            line += f", {row['corrections']} corrected"
+        if row["anomalies"]:
+            line += f", {len(row['anomalies'])} flagged for a human"
+        print(line)
 
-    print("-" * 40)
-    if final.get("final_report_path"):
-        print(f"Done. Report saved to: {final['final_report_path']}")
-    elif final.get("approval") == "rejected":
-        print("Stopped: the draft was rejected, so nothing was sent.")
-    else:
-        print("Stopped before producing a report. See the log above.")
+    if args.approve_all:
+        print("\nApproving everything (demo only — normally a person does this)...")
+        for row in batch.overview()["clients"]:
+            if row["status"] == batch.NEEDS_REVIEW:
+                done = batch.submit_decision(row["id"], "approved", reviewer="Command line")
+                print(f"  {row['name']:<24} saved to {os.path.basename(done['report_path'])}")
+
+    counts = batch.overview()["counts"]
+    print(f"\n{counts['needs_review']} waiting for a human · {counts['approved']} approved")
+    print("Open the web app to review them: python -m agency_report_agent.web\n")
 
 
 if __name__ == "__main__":

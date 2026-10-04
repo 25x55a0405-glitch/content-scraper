@@ -1,5 +1,5 @@
 {
-  "description": "Checks for the number-verification step. Each case gives a draft and says whether it should pass (every number real) or fail (contains a made-up number). This is the eval you show a client to prove the agent does not hallucinate figures.",
+  "description": "Checks for the fact-checking step. Each case gives a draft and says whether it should be accepted (every figure real) or rejected (contains a figure that is not in the client's data).",
   "client_file": "brightwave_dental.json",
   "cases": [
     {
@@ -9,7 +9,7 @@
     },
     {
       "name": "Correct single channel figure",
-      "draft": "Paid search delivered 143 conversions on £3200 of spend.",
+      "draft": "Paid search delivered 143 conversions on \u00a33200 of spend.",
       "should_pass": true
     },
     {
@@ -31,6 +31,16 @@
       "name": "Years are not treated as metrics",
       "draft": "Compared with 2025, September 2026 was a strong month with 86 organic conversions.",
       "should_pass": true
+    },
+    {
+      "name": "Conversion rate is allowed",
+      "draft": "Paid search converted at 5.4% this period.",
+      "should_pass": true
+    },
+    {
+      "name": "Invented conversion rate",
+      "draft": "Paid search converted at 42.0% this period.",
+      "should_pass": false
     }
   ]
 }

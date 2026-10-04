@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}{{ client.name }} report — Report Desk{% endblock %}
+
+{% block content %}
+<a class="backlink" href="/">← All clients</a>
+
+<div class="page-head">
+  <div>
+    <h1>{{ client.name }}</h1>
+    <p class="sub">Approved by {{ info.state.reviewer or 'your team' }} · ready to send to the client</p>
+  </div>
+  <div class="actions">
+    <a class="btn btn-ghost" href="/report/{{ client.id }}/raw" target="_blank" rel="noopener">Open full page</a>
+  </div>
+</div>
+
+<iframe class="frame" src="/report/{{ client.id }}/raw" title="{{ client.name }} client report"></iframe>
+<p class="sub" style="margin-top:12px">
+  Saved to <code>{{ info.report_path }}</code> — send it as-is, or print to PDF from the full page.
+</p>
+{% endblock %}

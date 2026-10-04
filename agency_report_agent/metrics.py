@@ -149,6 +149,11 @@ def numbers_in_text(text: str) -> list[tuple[float, bool]]:
     return found
 
 
+def count_numbers(text: str) -> int:
+    """How many figures a piece of text states (used for the audit trail)."""
+    return len(numbers_in_text(text))
+
+
 def verify_draft(draft: str, data: dict[str, Any], tolerance: float = 0.5) -> list[str]:
     """Return a list of numbers in the draft that don't match the source data.
 

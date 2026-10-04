@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Review {{ client.name }} — Report Desk{% endblock %}
+
+{% block content %}
+<a class="backlink" href="/">← All clients</a>
+
+<div class="page-head">
+  <div>
+    <h1>{{ client.name }}</h1>
+    <p class="sub">{{ client.period }} · drafted and fact-checked, waiting on you</p>
+  </div>
+</div>
+
+<div class="review-grid">
+  <div>
+    <div class="card">
+      <div class="card-head">
+        <h2>Draft summary</h2>
+        <span class="pill approved"><span class="dot"></span>{{ info.figures_checked }} figures verified</span>
+      </div>
+      <div class="card-body">
+        <div class="draft">
+          {% for para in draft_paragraphs %}<p>{{ para }}</p>{% endfor %}
+        </div>
+
+        {% if info.anomalies %}
+          <div class="callout">
+            <h3>Only you can explain these</h3>
+            <ul>
+              {% for a in info.anomalies %}<li>{{ a }}</li>{% endfor %}
+            </ul>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:20px">
+      <div class="card-head"><h2>Your decision</h2></div>
+      <div class="card-body">
+        <form method="post" action="/review/{{ client.id }}">
+          <label class="field">
+            <span class="field-label">Reviewer</span>
+            <select name="reviewer">
+              {% for r in agency.reviewers %}<option value="{{ r }}">{{ r }}</option>{% endfor %}
+            </select>
+          </label>
+          <label class="field">
+            <span class="field-label">Add a note to the client (optional)</span>
+            <textarea name="note" placeholder="e.g. The jump in social traffic came from our TikTok collaboration with Dr. Shah."></textarea>
+          </label>
+          <div class="decide">
+            <button class="btn btn-primary" name="decision" value="approved" type="submit">Approve &amp; generate report</button>
+            <button class="btn btn-danger" name="decision" value="rejected" type="submit">Send back for changes</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <aside>
+    <div class="card">
+      <div class="card-head"><h2>Fact-check trail</h2></div>
+      <div class="card-body">
+        <ul class="trail">
+          {% for step in info.state.verify_history %}
+            <li class="{{ 'fail' if step.issues else 'pass' }}">
+              <div class="t-title">
+                Draft {{ step.attempt }} — {{ step.checked }} figures checked
+              </div>
+              {% if step.issues %}
+                <div class="t-detail">
+                  {{ step.issues|length }} did not match the source data, so the agent rewrote it.
+                </div>
+              {% else %}
+                <div class="t-detail">Every figure matched the source data.</div>
+              {% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:20px">
+      <div class="card-head"><h2>This period</h2></div>
+      <div class="card-body">
+        {% for row in summary_rows %}
+          <div class="stat-line"><span>{{ row.0 }}</span><span>{{ row.1 }}</span></div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:20px">
+      <div class="card-head"><h2>What the agent did</h2></div>
+      <div class="card-body">
+        <ol class="loglist">
+          {% for line in info.state.log %}
+            <li><span class="n">{{ loop.index }}</span><span>{{ line }}</span></li>
+          {% endfor %}
+        </ol>
+      </div>
+    </div>
+  </aside>
+</div>
+{% endblock %}

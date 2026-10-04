@@ -1,8 +1,13 @@
-# Mock mode (free, no API key) needs only langgraph:
-langgraph>=0.2.0
+# The agent itself (free mock mode needs only these two):
+langgraph>=1.0
+langgraph-checkpoint-sqlite>=2.0
 
-# Live mode (uses Claude to write the draft) also needs:
+# The web app:
+fastapi>=0.110
+uvicorn>=0.27
+jinja2>=3.1
+python-multipart>=0.0.9
+
+# Live mode — only needed if you want Claude to write the drafts:
 langchain-anthropic>=0.3.0
-
-# Optional: lets the tool read an ANTHROPIC_API_KEY from a .env file.
 python-dotenv>=1.0.0

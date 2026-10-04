@@ -1,0 +1,32 @@
+{
+  "client_name": "Oakfield Veterinary",
+  "agency_name": "Northstar Digital",
+  "period": "September 2026",
+  "previous_period": "August 2026",
+  "currency": "\u00a3",
+  "channels": {
+    "organic_search": {
+      "sessions": 5260,
+      "prev_sessions": 4890,
+      "conversions": 128,
+      "prev_conversions": 112
+    },
+    "paid_search": {
+      "sessions": 3120,
+      "prev_sessions": 3340,
+      "conversions": 96,
+      "prev_conversions": 104,
+      "spend": 4100,
+      "prev_spend": 4300
+    },
+    "social": {
+      "sessions": 1480,
+      "prev_sessions": 2610,
+      "conversions": 19,
+      "prev_conversions": 34
+    }
+  },
+  "goals": {
+    "monthly_leads_target": 230
+  }
+}

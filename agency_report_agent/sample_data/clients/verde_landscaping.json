@@ -1,0 +1,32 @@
+{
+  "client_name": "Verde Landscaping",
+  "agency_name": "Northstar Digital",
+  "period": "September 2026",
+  "previous_period": "August 2026",
+  "currency": "\u00a3",
+  "channels": {
+    "organic_search": {
+      "sessions": 3310,
+      "prev_sessions": 2480,
+      "conversions": 102,
+      "prev_conversions": 64
+    },
+    "paid_search": {
+      "sessions": 1980,
+      "prev_sessions": 1920,
+      "conversions": 71,
+      "prev_conversions": 68,
+      "spend": 2750,
+      "prev_spend": 2700
+    },
+    "social": {
+      "sessions": 2240,
+      "prev_sessions": 2180,
+      "conversions": 33,
+      "prev_conversions": 30
+    }
+  },
+  "goals": {
+    "monthly_leads_target": 190
+  }
+}

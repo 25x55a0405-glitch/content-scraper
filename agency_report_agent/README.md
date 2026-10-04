@@ -1,124 +1,150 @@
-# Agency Report Agent
+# Report Desk
 
-An AI **agent graph** (built with LangGraph + LangChain) that writes a marketing
-agency's monthly client report, checks its own numbers, flags anything unusual
-for a human, and only "sends" the report after a person approves it.
+An AI agent that writes a marketing agency's monthly client reports, checks
+every figure it wrote against the real data, flags anything unusual for a
+human, and waits for approval before a single report goes out.
 
-This is the demo for the Agency Report Agent offer. You can run it **for free,
-with no API key**, and watch the whole thing work.
+Built with **LangGraph** (the agent) and **LangChain** (the writing), with a
+web app the agency actually uses.
 
----
+**It runs for free, with no API key.** You can see the whole thing working in
+about two minutes.
 
-## What makes it an agent graph (not just a script)
-
-It has a **loop**, **branches**, and a **human-in-the-loop** approval step:
-
-```
- fetch_data ──(data ok?)──> detect_anomalies ──> draft_commentary
-     │  ▲ no                                            │
-     └──┘ retry (max 2)                                 ▼
-                                                 verify_numbers
-                                                  │        ▲
-                       (numbers match?) no, retry │        │  loop
-                               ┌──────────────────┘        │
-                               ▼                           │
-                        draft_commentary ─────────────────┘
-                               │ yes (or gave up after N tries)
-                               ▼
-                        human_approval ──(approved?)──> render_report ──> END
-                               │ rejected
-                               └──────────────────────────────────────> END
-```
-
-- **Loop:** if the draft contains a number that isn't in the client's data, the
-  agent rewrites it — up to 3 tries — until every figure checks out.
-- **Branches:** retry if the data won't load; rewrite or move on after the
-  number check; render or stop after the human decides.
-- **Human-in-the-loop:** nothing is "sent" until a person approves it.
+![Dashboard](../docs/screen-dashboard.png)
 
 ---
 
-## Run it (free, no API key)
+## The one-line version
 
-1. Install the one dependency for free mode:
-   ```
-   pip install langgraph
-   ```
-2. From the repository's top folder (`content-scraper/`), run:
-   ```
-   python -m agency_report_agent.cli --demo-glitch
-   ```
-   The `--demo-glitch` flag makes the first draft contain one wrong number **on
-   purpose**, so you can watch the verification loop catch it and fix it. This is
-   the moment to capture for your demo video.
+> It writes your monthly client reports, double-checks its own numbers, and
+> waits for your approval before anything goes out.
 
-3. Approve the draft when prompted (`y`). The finished report appears in
-   `agency_report_agent/output/`.
+## What happens, in plain English
 
-Other ways to run:
+Every month, the agent pulls each client's figures, writes the report summary,
+then checks every number it just wrote against the real data. If it got one
+wrong, it rewrites that part and checks again. Anything unusual — like social
+traffic nearly doubling — it flags for the agency to explain, because only they
+know why. Then it stops and waits: nothing reaches a client until someone reads
+it and clicks approve.
+
+---
+
+## Run it (free, about 2 minutes)
+
+```bash
+pip install langgraph langgraph-checkpoint-sqlite fastapi uvicorn jinja2 python-multipart
+python -m agency_report_agent.web
 ```
-python -m agency_report_agent.cli                    # normal free run (asks for approval)
-python -m agency_report_agent.cli --auto-approve     # free run, no prompt
-python -m agency_report_agent.cli --client path/to/your_client.json
+
+Open **http://127.0.0.1:8000**, tick **Demo the fact-check**, and press
+**Run 6 reports**.
+
+Ticking that box plants one wrong figure in each first draft on purpose, so you
+can watch the agent catch it and correct itself. Open any client and look at the
+**Fact-check trail** — that is the part worth recording for a demo video.
+
+| Screen | What it is |
+|---|---|
+| ![Review](../docs/screen-review.png) | **Review** — the draft, the fact-check trail, and the things only a human can explain |
+| ![Report](../docs/screen-client-report.png) | **The report** — what the agency sends, in the agency's own brand |
+
+### Command line instead
+
+```bash
+python -m agency_report_agent.cli --demo-glitch      # draft and fact-check all clients
+python -m agency_report_agent.cli --approve-all      # also approve and produce the reports
+python -m agency_report_agent.cli --start-over       # begin a fresh round
 ```
 
-## Run the quality checks (the "eval sheet" you show clients)
+### The quality checks you show a client
 
-```
+```bash
 python -m agency_report_agent.tests.run_evals
 ```
 
-This proves the agent catches made-up numbers and corrects itself. Showing a
-prospect a passing eval sheet answers their biggest worry: *"Can I trust what
-the AI writes?"*
+This proves four things: it spots made-up figures, it always stops for a human,
+rejecting a draft really does stop it, and it corrects its own mistakes. A
+passing sheet answers the question every prospect actually has — *can I trust
+what it writes?*
 
-## Run it live with Claude (costs a few cents)
+### Live mode, with Claude writing the drafts
 
-1. Install the live dependencies:
-   ```
-   pip install langgraph langchain-anthropic python-dotenv
-   ```
-2. Copy `.env.example` to `.env` and add your Anthropic API key.
-3. Run:
-   ```
-   python -m agency_report_agent.cli --live
-   ```
+```bash
+pip install langchain-anthropic python-dotenv
+cp agency_report_agent/.env.example agency_report_agent/.env   # add your API key
+REPORT_DESK_LIVE=1 python -m agency_report_agent.web
+```
 
-**Cost:** one report is well under a cent of tokens. The default model is
-`claude-opus-5-5`. For this simple drafting job you can cut cost by roughly 20x
-by setting `AGENT_MODEL=claude-haiku-4-5` in your `.env`.
+One report costs well under a cent. The default model is `claude-opus-5-5`; set
+`AGENT_MODEL=claude-haiku-4-5` in `.env` to cut that by roughly 20x.
 
 ---
 
-## Use your own (or a prospect's) data
+## How it is built
 
-Copy `sample_data/brightwave_dental.json`, change the numbers, and pass it with
-`--client`. For a real demo to a specific agency, fill it with one of *their*
-clients' public figures — a personalized demo gets far more replies.
+The agent is a **graph**, not a script: it can go backwards, take different
+paths, and pause mid-run to wait for a person.
 
-## How this maps to the business
+```
+ fetch_data ──(got the data?)──> detect_anomalies ──> draft_commentary
+     │  ▲ no                                                │
+     └──┘ retry (max 2)                                     ▼
+                                                     verify_numbers
+                                                      │          ▲
+                   (every figure correct?) no, rewrite│          │  loop, max 3
+                               ┌──────────────────────┘          │
+                               ▼                                 │
+                        draft_commentary ────────────────────────┘
+                               │ yes
+                               ▼
+                        human_approval   ← the run PAUSES here, saved to disk
+                               │
+                    approved   │   sent back for changes
+                       ┌───────┴────────┐
+                       ▼                ▼
+                render_report          stop
+```
 
-- **What you sell:** this agent, set up on the agency's own accounts.
-- **Entry offer:** a ~$900 fixed pilot on 3 of their clients, money-back if the
-  drafts aren't usable.
-- **Why it's safe to deliver:** it only *reads* marketing data and never sends
-  anything without a human approving it — so even though it's built with help
-  from AI coding tools, the blast radius is tiny.
+| Step | What it does | Why it is built this way |
+|---|---|---|
+| `fetch_data` | Loads the client's figures | Everything downstream must be grounded in real data. Retries, because real data sources fail. |
+| `detect_anomalies` | Flags swings over 40% | **Plain arithmetic, no AI** — a rule is enough, and code cannot hallucinate. |
+| `draft_commentary` | Writes the summary | The only step that uses AI, because this is the only step needing judgement. |
+| `verify_numbers` | Checks every figure against the source | **Plain arithmetic again.** A wrong figure in a client report is the worst thing this product could do. |
+| `human_approval` | Pauses for a person | The agency's name is on the report. Nothing is sent without a human. |
+| `render_report` | Builds the branded report | The data table is built **from the source data, never from the AI's text**, so the numbers are always exactly right. |
 
-See `../reports/Agent graph offers for first client.md` for the full plan.
+The guiding principle: **use AI only where judgement is needed, and plain code
+wherever rules are enough.** Three of the five working steps use no AI at all.
+
+### Files
+
+| File | What it holds |
+|---|---|
+| `graph.py` | The graph: the steps, the loop, the branches |
+| `nodes.py` | What each step actually does |
+| `state.py` | The shared record that travels between steps |
+| `metrics.py` | The arithmetic and the fact-checking rules |
+| `llm.py` | The only place Claude is called |
+| `render.py` | The branded client report |
+| `batch.py` | Running every client and tracking each one |
+| `web/` | The app: dashboard, review screen, report viewer |
+| `tests/` | The quality checks |
 
 ---
 
-## Honest limitations (v1)
+## Honest limitations
 
-- The number-checker validates figures that come straight from the data, plus
-  month-over-month changes and conversion rates. If the draft cites some other
-  derived metric, it will be flagged — add it to the allowed sets in
-  `metrics.py` if you want the agent to use it.
-- `fetch_data` reads a local JSON file. Connecting live GA4 / Search Console /
-  ad accounts is the next step, and is best done through the agency's own
-  credentials.
-- Approval here is a terminal prompt. In production, move it to Slack (LangGraph
-  supports pausing a run for outside approval).
-- This is a demo, not audited production software. Before a paying client goes
-  live, run a security review and keep every credential on the client's accounts.
+- **Data comes from JSON files**, not live GA4 / Search Console. Connecting
+  those is the next build, and must run on the agency's own credentials.
+- **The fact-checker** validates figures from the data, month-on-month changes
+  and conversion rates. A draft citing some other derived metric gets flagged;
+  add it to the allowed sets in `metrics.py` if you want it permitted.
+- **Approval happens in this app.** Moving it into Slack is a natural next step.
+- **The "hours saved" figure** assumes roughly 3 hours per client per month,
+  which came from vendor case studies. Check it against the agency's real
+  numbers before quoting it to them.
+- **This is a working demo, not audited production software.** Before a paying
+  client goes live: run a security review, keep every credential on the
+  client's own accounts, and set a spend cap on the API key.

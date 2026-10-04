@@ -1,0 +1,311 @@
+/* Report Desk — product UI.
+   Deliberately near-monochrome: colour is reserved for status, so the tool
+   never fights the agency's own brand (which appears on the reports instead).
+   Every status also carries a dot and a word, never colour alone. */
+
+:root {
+  --ground: #F6F6F4;
+  --surface: #FFFFFF;
+  --surface-2: #FAFAF9;
+  --ink: #15181C;
+  --ink-2: #3F4650;
+  --muted: #717A85;
+  --rule: #E4E6E3;
+  --rule-strong: #D3D7D2;
+
+  --good-fg: #136B3F;  --good-bg: #E3F5EA;
+  --warn-fg: #8A5A0B;  --warn-bg: #FBF0DC;
+  --crit-fg: #9B2F23;  --crit-bg: #FBE7E3;
+  --idle-fg: #5D656F;  --idle-bg: #EDEEEC;
+
+  --btn-fg: #FFFFFF;
+  --btn-bg: #15181C;
+  --btn-bg-hover: #000000;
+
+  --display: "Archivo", system-ui, -apple-system, sans-serif;
+  --body: "Public Sans", system-ui, -apple-system, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --radius: 10px;
+  --shadow: 0 1px 2px rgba(16, 20, 24, .05), 0 1px 1px rgba(16, 20, 24, .03);
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground: #0E1013;
+    --surface: #16191E;
+    --surface-2: #1B1F25;
+    --ink: #E8EBEE;
+    --ink-2: #B6BDC6;
+    --muted: #858E99;
+    --rule: #272C33;
+    --rule-strong: #343A42;
+
+    --good-fg: #5FD39B;  --good-bg: #10301F;
+    --warn-fg: #E8B45C;  --warn-bg: #332611;
+    --crit-fg: #F08E7D;  --crit-bg: #381914;
+    --idle-fg: #99A2AC;  --idle-bg: #23272D;
+
+    --btn-fg: #15181C;
+    --btn-bg: #E8EBEE;
+    --btn-bg-hover: #FFFFFF;
+
+    --shadow: 0 1px 2px rgba(0, 0, 0, .4);
+    color-scheme: dark;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--body);
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: inherit; }
+
+/* ---------------------------------------------------------------- top bar */
+.topbar {
+  position: sticky; top: 0; z-index: 10;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: saturate(180%) blur(12px);
+  border-bottom: 1px solid var(--rule);
+}
+.topbar-inner {
+  max-width: 1120px; margin: 0 auto; padding: 13px 24px;
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+}
+.wordmark { display: flex; align-items: center; gap: 9px; text-decoration: none; }
+.mark {
+  width: 22px; height: 22px; border-radius: 6px; background: var(--ink);
+  display: grid; place-items: center; flex: none;
+}
+.mark span { display: block; width: 9px; height: 9px; border-radius: 2px; background: var(--surface); }
+.wordmark b {
+  font-family: var(--display); font-weight: 700; font-size: 15px; letter-spacing: -.015em;
+}
+.topbar-meta { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
+.chip {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .06em;
+  border: 1px solid var(--rule-strong); border-radius: 99px; padding: 3px 10px; color: var(--ink-2);
+}
+
+/* ------------------------------------------------------------------ page */
+.page { max-width: 1120px; margin: 0 auto; padding: 36px 24px 72px; }
+@media (max-width: 600px) { .page { padding: 24px 16px 56px; } }
+
+.page-head {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 20px; flex-wrap: wrap; margin-bottom: 28px;
+}
+h1 {
+  font-family: var(--display); font-weight: 700; letter-spacing: -.028em;
+  font-size: clamp(1.7rem, 4vw, 2.1rem); margin: 0 0 4px; line-height: 1.1;
+  text-wrap: balance;
+}
+.sub { margin: 0; color: var(--muted); font-size: 14.5px; }
+
+.actions { display: flex; gap: 9px; align-items: center; flex-wrap: wrap; }
+
+/* --------------------------------------------------------------- buttons */
+.btn {
+  font-family: var(--body); font-size: 14px; font-weight: 600;
+  border-radius: 8px; padding: 9px 16px; border: 1px solid transparent;
+  cursor: pointer; text-decoration: none; display: inline-flex;
+  align-items: center; gap: 7px; line-height: 1.2; transition: background .12s ease;
+}
+.btn-primary { background: var(--btn-bg); color: var(--btn-fg); }
+.btn-primary:hover { background: var(--btn-bg-hover); }
+.btn-ghost { background: transparent; color: var(--ink-2); border-color: var(--rule-strong); }
+.btn-ghost:hover { background: var(--surface-2); color: var(--ink); }
+.btn-danger { background: transparent; color: var(--crit-fg); border-color: var(--rule-strong); }
+.btn-danger:hover { background: var(--crit-bg); }
+.btn:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
+  outline: 2px solid var(--ink); outline-offset: 2px;
+}
+.btn[disabled] { opacity: .45; cursor: not-allowed; }
+
+.toggle {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 13px; color: var(--muted); cursor: pointer; user-select: none;
+}
+.toggle input { accent-color: var(--ink); width: 15px; height: 15px; }
+
+/* ------------------------------------------------------------- KPI tiles */
+.kpis {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px; margin-bottom: 26px;
+}
+.kpi {
+  background: var(--surface); border: 1px solid var(--rule);
+  border-radius: var(--radius); padding: 16px 18px; box-shadow: var(--shadow);
+  min-width: 0;
+}
+.kpi-label {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .11em;
+  text-transform: uppercase; color: var(--muted); margin-bottom: 9px;
+}
+.kpi-value {
+  font-family: var(--display); font-weight: 700; font-size: 2rem;
+  letter-spacing: -.03em; line-height: 1; font-variant-numeric: tabular-nums;
+}
+.kpi-foot { font-size: 12.5px; color: var(--muted); margin-top: 7px; }
+.kpi.attention { border-color: color-mix(in srgb, var(--warn-fg) 42%, var(--rule)); }
+.kpi.attention .kpi-value { color: var(--warn-fg); }
+
+/* ------------------------------------------------------------ status pill */
+.pill {
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+  font-size: 12.5px; font-weight: 600; border-radius: 99px; padding: 3px 11px 3px 9px;
+}
+.dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }
+.pill.needs_review { background: var(--warn-bg); color: var(--warn-fg); }
+.pill.approved { background: var(--good-bg); color: var(--good-fg); }
+.pill.changes_requested { background: var(--crit-bg); color: var(--crit-fg); }
+.pill.not_started, .pill.failed { background: var(--idle-bg); color: var(--idle-fg); }
+
+/* ------------------------------------------------------------------ card */
+.card {
+  background: var(--surface); border: 1px solid var(--rule);
+  border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden;
+}
+.card-head {
+  padding: 14px 18px; border-bottom: 1px solid var(--rule);
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
+.card-head h2 {
+  font-family: var(--display); font-size: 14px; font-weight: 600;
+  letter-spacing: -.01em; margin: 0;
+}
+.card-body { padding: 18px; }
+
+/* ----------------------------------------------------------------- table */
+.table-scroll { overflow-x: auto; }
+table.rows { width: 100%; border-collapse: collapse; min-width: 640px; }
+table.rows th {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--muted); font-weight: 500;
+  text-align: left; padding: 11px 18px; border-bottom: 1px solid var(--rule);
+}
+table.rows td { padding: 14px 18px; border-bottom: 1px solid var(--rule); vertical-align: middle; }
+table.rows tr:last-child td { border-bottom: none; }
+table.rows tbody tr:hover { background: var(--surface-2); }
+.client-name { font-weight: 600; font-size: 14.5px; }
+.client-sub { color: var(--muted); font-size: 12.5px; }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 13px; }
+.right { text-align: right; }
+.flagnote { color: var(--warn-fg); font-size: 12.5px; }
+.okmark { color: var(--good-fg); }
+
+/* -------------------------------------------------------------- review page */
+.review-grid { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 20px; align-items: start; }
+@media (max-width: 900px) { .review-grid { grid-template-columns: minmax(0, 1fr); } }
+
+.backlink {
+  display: inline-flex; align-items: center; gap: 6px; color: var(--muted);
+  text-decoration: none; font-size: 13.5px; margin-bottom: 14px;
+}
+.backlink:hover { color: var(--ink); }
+
+.draft {
+  font-size: 16px; line-height: 1.75; max-width: 62ch;
+}
+.draft p { margin: 0 0 15px; }
+.draft p:last-child { margin-bottom: 0; }
+
+.callout {
+  border-left: 3px solid var(--warn-fg); background: var(--warn-bg);
+  padding: 13px 16px; border-radius: 0 8px 8px 0; margin-top: 18px;
+}
+.callout h3 {
+  font-family: var(--display); font-size: 12px; letter-spacing: .07em;
+  text-transform: uppercase; margin: 0 0 7px; color: var(--warn-fg);
+}
+.callout ul { margin: 0; padding-left: 17px; font-size: 14px; }
+.callout li { margin-bottom: 4px; }
+
+label.field { display: block; margin-bottom: 14px; }
+.field-label {
+  display: block; font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--muted); margin-bottom: 7px;
+}
+textarea, select, input[type="text"] {
+  width: 100%; font-family: var(--body); font-size: 14.5px; color: var(--ink);
+  background: var(--surface-2); border: 1px solid var(--rule-strong);
+  border-radius: 8px; padding: 10px 12px; resize: vertical;
+}
+textarea { min-height: 76px; }
+
+.decide { display: flex; gap: 9px; flex-wrap: wrap; align-items: center; margin-top: 4px; }
+
+/* ------------------------------------------------------- verification trail */
+.trail { list-style: none; margin: 0; padding: 0; }
+.trail li {
+  position: relative; padding: 0 0 16px 24px; border-left: 2px solid var(--rule);
+  margin-left: 5px;
+}
+.trail li:last-child { border-left-color: transparent; padding-bottom: 0; }
+.trail li::before {
+  content: ""; position: absolute; left: -6px; top: 3px;
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--surface); border: 2px solid var(--rule-strong);
+}
+.trail li.pass::before { border-color: var(--good-fg); background: var(--good-fg); }
+.trail li.fail::before { border-color: var(--warn-fg); background: var(--warn-fg); }
+.trail .t-title { font-weight: 600; font-size: 13.5px; }
+.trail .t-detail { color: var(--muted); font-size: 12.5px; }
+.trail .t-detail code {
+  font-family: var(--mono); font-size: 11.5px; background: var(--surface-2);
+  border: 1px solid var(--rule); border-radius: 4px; padding: 0 4px;
+}
+
+.stat-line {
+  display: flex; justify-content: space-between; gap: 12px;
+  padding: 9px 0; border-bottom: 1px solid var(--rule); font-size: 13.5px;
+}
+.stat-line:last-child { border-bottom: none; }
+.stat-line span:first-child { color: var(--muted); }
+.stat-line span:last-child { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+/* ----------------------------------------------------------- empty state */
+.empty { text-align: center; padding: 56px 24px; }
+.empty h2 {
+  font-family: var(--display); font-size: 1.15rem; font-weight: 600;
+  margin: 0 0 7px; letter-spacing: -.015em;
+}
+.empty p { color: var(--muted); margin: 0 auto 20px; max-width: 46ch; }
+
+.flash {
+  background: var(--good-bg); color: var(--good-fg); border-radius: 8px;
+  padding: 11px 15px; font-size: 14px; font-weight: 500; margin-bottom: 20px;
+  display: flex; align-items: center; gap: 8px;
+}
+
+.frame {
+  width: 100%; height: 78vh; border: 1px solid var(--rule);
+  border-radius: var(--radius); background: #fff;
+}
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* Right-align the action column header over its buttons. */
+table.rows th.right { text-align: right; }
+
+/* Run log — prose, so it reads left-aligned with a quiet step number. */
+.loglist { list-style: none; margin: 0; padding: 0; counter-reset: step; }
+.loglist li {
+  display: grid; grid-template-columns: 20px 1fr; gap: 10px;
+  padding: 8px 0; border-bottom: 1px solid var(--rule);
+  font-size: 13.5px; line-height: 1.5;
+}
+.loglist li:last-child { border-bottom: none; }
+.loglist .n {
+  font-family: var(--mono); font-size: 11px; color: var(--muted);
+  padding-top: 2px; font-variant-numeric: tabular-nums;
+}
