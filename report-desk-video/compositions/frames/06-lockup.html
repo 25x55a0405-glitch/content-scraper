@@ -1,0 +1,258 @@
+<template>
+  <style>
+    /* ───── 06-lockup — Report Desk closing lockup ─────
+       Paper #F6F6F4 · ink #15181C · secondary #717A85 · hairline #E4E6E3
+       No status colour. No shadow, no gradient, no glow. */
+
+    #root {
+      position: relative;
+      width: 1920px;
+      height: 1080px;
+      overflow: hidden;
+      container-type: size;
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* full-bleed paper ground — its own full-duration clip layer */
+    #f06-lockup-ground {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 1920px;
+      height: 1080px;
+      background: #F6F6F4;
+    }
+
+    /* inherited hairline (handoff_in): y = 70%, x 36%–64%, opacity 1, scale 1, static */
+    #f06-lockup-rule {
+      position: absolute;
+      left: 691.2px;
+      top: 756px;
+      width: 537.6px;
+      height: 1px;
+      background: #E4E6E3;
+      opacity: 1;
+    }
+
+    /* the lockup row — mark + wordmark, centred over the rule */
+    #f06-lockup-lockup {
+      position: absolute;
+      left: 0;
+      top: 620px;
+      width: 1920px;
+      height: 100px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 28px;
+    }
+
+    #f06-lockup-mark {
+      display: block;
+      width: 86px;
+      height: 86px;
+      flex: 0 0 auto;
+    }
+
+    #f06-lockup-mark-outer {
+      fill: #15181C;
+      stroke: #15181C;
+      stroke-width: 7;
+      stroke-linejoin: round;
+    }
+
+    #f06-lockup-mark-inner {
+      fill: #F6F6F4;
+      stroke: none;
+    }
+
+    #f06-lockup-wordmark {
+      font-size: 70px;
+      font-weight: 400;
+      line-height: 1.1;
+      letter-spacing: -0.015em;
+      color: #15181C;
+      white-space: nowrap;
+    }
+
+    /* the promise line — beneath the rule, reading size, secondary */
+    #f06-lockup-promise {
+      position: absolute;
+      left: 100px;
+      top: 798px;
+      width: 1720px;
+      text-align: center;
+      font-size: 26px;
+      font-weight: 400;
+      line-height: 1.5;
+      color: #717A85;
+    }
+
+    .f06-lockup-word {
+      display: inline-block;
+      white-space: nowrap;
+      opacity: 0;
+    }
+  </style>
+
+  <div
+    id="root"
+    data-composition-id="06-lockup"
+    data-start="0"
+    data-duration="2.5"
+    data-width="1920"
+    data-height="1080"
+  >
+    <div
+      id="f06-lockup-ground"
+      class="clip"
+      data-start="0"
+      data-duration="2.5"
+      data-track-index="0"
+    ></div>
+
+    <div
+      id="f06-lockup-rule"
+      class="clip"
+      data-start="0"
+      data-duration="2.5"
+      data-track-index="1"
+    ></div>
+
+    <div
+      id="f06-lockup-lockup"
+      class="clip"
+      data-start="0"
+      data-duration="2.5"
+      data-track-index="2"
+    >
+      <svg
+        id="f06-lockup-mark"
+        viewBox="0 0 100 100"
+        xmlns="http://www.w3.org/2000/svg"
+        aria-hidden="true"
+      >
+        <rect
+          id="f06-lockup-mark-outer"
+          x="4"
+          y="4"
+          width="92"
+          height="92"
+          rx="9"
+          ry="9"
+          fill-opacity="0"
+          style="stroke-dasharray: 1000; stroke-dashoffset: 1000"
+        />
+        <rect
+          id="f06-lockup-mark-inner"
+          x="35"
+          y="34"
+          width="30"
+          height="30"
+          fill-opacity="0"
+        />
+      </svg>
+      <div id="f06-lockup-wordmark">Report Desk</div>
+    </div>
+
+    <div
+      id="f06-lockup-promise"
+      class="clip"
+      data-start="0"
+      data-duration="2.5"
+      data-track-index="3"
+    >
+      <span class="f06-lockup-word">It</span>
+      <span class="f06-lockup-word">writes</span>
+      <span class="f06-lockup-word">your</span>
+      <span class="f06-lockup-word">monthly</span>
+      <span class="f06-lockup-word">client</span>
+      <span class="f06-lockup-word">reports,</span>
+      <span class="f06-lockup-word">double-checks</span>
+      <span class="f06-lockup-word">its</span>
+      <span class="f06-lockup-word">own</span>
+      <span class="f06-lockup-word">numbers,</span>
+      <span class="f06-lockup-word">and</span>
+      <span class="f06-lockup-word">waits</span>
+      <span class="f06-lockup-word">for</span>
+      <span class="f06-lockup-word">your</span>
+      <span class="f06-lockup-word">approval.</span>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+  <script>
+    (function () {
+      window.__timelines = window.__timelines || {};
+      var tl = gsap.timeline({ paused: true });
+
+      /* ── Scene 1 (0.0–0.9s) — the mark draws itself on, ink, centred.
+            svg-path-draw: measured getTotalLength, dasharray = dashoffset = len,
+            stroke tweens to 0, then the ink fill lands, then the paper square. */
+      var outer = document.getElementById("f06-lockup-mark-outer");
+      var inner = document.getElementById("f06-lockup-mark-inner");
+      var len = 368;
+      if (outer && outer.getTotalLength) {
+        var measured = outer.getTotalLength();
+        if (measured > 0) {
+          len = measured;
+        }
+      }
+      if (outer) {
+        outer.style.strokeDasharray = String(len);
+        outer.style.strokeDashoffset = String(len);
+      }
+
+      tl.fromTo(
+        "#f06-lockup-mark-outer",
+        { strokeDashoffset: len },
+        { strokeDashoffset: 0, duration: 0.58, ease: "power2.out" },
+        0.06
+      );
+      tl.fromTo(
+        "#f06-lockup-mark-outer",
+        { fillOpacity: 0 },
+        { fillOpacity: 1, duration: 0.24, ease: "power1.out" },
+        0.6
+      );
+      tl.fromTo(
+        "#f06-lockup-mark-inner",
+        { fillOpacity: 0 },
+        { fillOpacity: 1, duration: 0.18, ease: "power1.out" },
+        0.72
+      );
+
+      /* ── Scene 2 (0.9–1.6s) — "Report Desk" sets beside the mark.
+            Exactly one restrained slide-up. */
+      tl.fromTo(
+        "#f06-lockup-wordmark",
+        { opacity: 0, y: 26 },
+        { opacity: 1, y: 0, duration: 0.52, ease: "power3.out" },
+        0.92
+      );
+
+      /* ── Scene 3 (1.6–2.5s) — the promise line waterfalls in beneath the rule.
+            waterfall-entry: binary opacity via tl.set, one direction (from below),
+            gaps shrink across the cascade, the last word snaps. */
+      var words = document.querySelectorAll("#f06-lockup-promise .f06-lockup-word");
+      var n = words.length;
+      var t = 1.6;
+      for (var i = 0; i < n; i++) {
+        var p = n > 1 ? i / (n - 1) : 0;
+        var dur = 0.13 - 0.03 * p;
+        var off = 34 - 8 * p;
+        tl.set(words[i], { opacity: 1, y: off }, t);
+        tl.to(words[i], { y: 0, duration: dur, ease: "power4.out" }, t);
+        t += 0.042 - 0.022 * p;
+      }
+
+      /* ── The hold. Last word lands ≈2.15s; everything is still to the last
+            frame — no drift, no breathing, no exit. The hold is the payload. */
+      tl.set("#f06-lockup-lockup", { opacity: 1 }, 2.5);
+
+      window.__timelines["06-lockup"] = tl;
+      tl.seek(0);
+    })();
+  </script>
+</template>
