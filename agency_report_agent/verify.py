@@ -223,10 +223,32 @@ _SKIP_BEFORE_RX = re.compile(r"(?:\btop|\bpage|\bstep|\bphase|\bweek|\bday|\btie
                              r"\bpriority|\bround|\bstage|\bwave)\s*$", re.I)
 _MONTH_NAMES = MONTHS + tuple(m[:3] for m in MONTHS) + ("Sept",)
 _MONTH_RX = re.compile(rf"\b(?:{'|'.join(_MONTH_NAMES)})\.?\b")
-_EVERY_POUND_RX = re.compile(r"([£$€])(\d+(?:\.\d+)?)\s+(?:back\s+)?(?:for|per)\s+every\s+[£$€]1(?:\.00)?\b")
+_EVERY_POUND_RX = re.compile(r"([£$€])(\d+(?:\.\d+)?)\s+(?:back\s+|in\s+(?:revenue|sales|return|income)\s+)?(?:for|per)\s+every\s+"
+                             r"[£$€]1(?:\.00)?\b(?:\s+(?:of\s+(?:ad\s+)?(?:spend|budget)|spent|invested))?")
 
 _CAUSE_RX = re.compile(r"(?:mainly|mostly|largely|primarily|partly|chiefly|driven|thanks to|due to|led by|"
                        r"because of)\b", re.I)
+_CHG_NOUNS = (r"(?:increase|rise|growth|jump|drop|fall|decline|decrease|uplift|gain|reduction|improvement|"
+              r"lift|dip|uptick|boost|swing)")
+_ADV = r"(?:(?:year|month)[- ](?:on|over)[- ](?:year|month)|yoy|mom|y/y|m/m)"
+_ADV_RX = re.compile(_ADV, re.I)
+_CHG_AFTER_RX = re.compile(rf"\s*(?:{_ADV}\s+)?{_CHG_NOUNS}\b", re.I)
+_RANGE_RX = re.compile(
+    r"(?<![\w.,£$€/:-])(?P<c1>[£$€])?(?P<n1>\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)(?P<s1>k)?\s?[-–—]\s?"
+    r"(?P<c2>[£$€])?(?P<n2>\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)(?P<s2>k)?(?P<u>\s?%)?(?![\w])|"
+    r"(?<![\w-])between\s+(?P<c3>[£$€])?(?P<n3>\d[\d,]*(?:\.\d+)?)(?P<s3>k)?\s+and\s+(?P<c4>[£$€])?"
+    r"(?P<n4>\d[\d,]*(?:\.\d+)?)(?P<s4>k)?(?P<u2>\s?%)?(?![\w])", re.I)
+_EVERY_DOLLAR_RX = re.compile(
+    r"\bevery\s+(?:dollar|pound|euro|[£$€]1(?:\.00)?)\b[^.;]*?\b(?:returned|generated|brought in|produced|earned|made|"
+    r"yielded|delivered)\s+(?:about\s+|around\s+|roughly\s+)?(?P<c>[£$€])(?P<n>\d+(?:\.\d+)?)", re.I)
+_COMPARE_CUE_RX = re.compile(r"(?:\bvs\.?|\bversus|\bagainst|\bcompared (?:with|to)|\bthan|\bcf\.?)"
+                             r"(?:\s+(?:the|a))?\s*$", re.I)
+_CHANNEL_GAP_RX = re.compile(r"\s*(?:\w+\s+){0,2}?(?:from|for|on|at|in|with|by|via|through)\s+(?:the\s+|our\s+|its\s+)?$", re.I)
+_FUTURE_HEADING_RX = re.compile(r"next (?:month|steps|quarter)|recommend|plan|outlook|priorit|roadmap|looking ahead|"
+                                r"going forward|what.?s next|focus|proposal|opportunit|actions?$", re.I)
+_STOP_NOUNS = frozenset("of to in on at and or for from with by this last the a an as vs versus than compared per "
+                        "out up down so but which while over month months year years is was were are it its their "
+                        "our your we they that these those has have had".split())
 _CITE_RX = re.compile(r"\[\s*(F\d+(?:\s*[,;/]\s*F?\d+)*)\s*\]")
 _CLAUSE_RX = re.compile(r"[;:()]|,(?!\d)|\s[–—-]\s|(?<![\w-])(?:while|whereas|but|although|though|and|"
                         r"yet|however|which|meanwhile)(?![\w-])", re.I)
@@ -265,11 +287,13 @@ class _Sentence:
     end: int
     text: str
     inherited: Optional[frozenset]      # scope carried over from the previous sentence or heading
+    future: bool = False                # sits under a "Next month" / "Recommendations" heading
 
 
 def _sentences(masked: str, raw: str) -> list[_Sentence]:
     out: list[_Sentence] = []
     heading_scope: Optional[frozenset] = None
+    heading_future = False
     pos = 0
     blocks: list[tuple[int, int, bool]] = []      # (start, end, is_heading)
     para_start = None
@@ -298,6 +322,7 @@ def _sentences(masked: str, raw: str) -> list[_Sentence]:
         if is_heading:
             scopes = _scopes_in(seg)
             heading_scope = frozenset().union(*scopes) if scopes else None
+            heading_future = bool(_FUTURE_HEADING_RX.search(seg))
             continue
         carried = heading_scope
         starts = [0] + [m.end() for m in re.finditer(r"(?<=[.!?])[\"')\]]*\s+(?=[\"'(\[]?[A-Z0-9£$€+−-])", seg)
@@ -307,7 +332,7 @@ def _sentences(masked: str, raw: str) -> list[_Sentence]:
             text = seg[s:e]
             if not text.strip():
                 continue
-            out.append(_Sentence(a + s, a + e, text, carried))
+            out.append(_Sentence(a + s, a + e, text, carried, heading_future))
             sc = _scopes_in(text)
             if sc:
                 carried = frozenset().union(*sc)
@@ -362,6 +387,9 @@ class _Mention:
     hedge: Optional[str] = None
     kinds: Optional[set] = None         # forced kinds (qualitative / converted mentions)
     hedge_band: Optional[tuple[float, float]] = None    # explicit acceptable [lo, hi] for qualitative claims
+    cur: str = ""                                        # currency symbol written with the figure
+    rng: Optional[tuple[float, float]] = None            # "4–5%": acceptable [lo, hi]
+    force_metrics: Optional[frozenset] = None            # "$4 for every $1" is always ROAS
 
 
 def _mentions(s: str) -> list[_Mention]:
@@ -370,8 +398,34 @@ def _mentions(s: str) -> list[_Mention]:
     for m in _EVERY_POUND_RX.finditer(s):
         v = float(m.group(2))
         dec = len(m.group(2).split(".")[1]) if "." in m.group(2) else 0
-        out.append(_Mention(m.start(), m.end(), m.group(0), v, "ratio", None, 0.5 * 10 ** -dec + 1e-9))
+        out.append(_Mention(m.start(), m.end(), m.group(0), v, "ratio", None, 0.5 * 10 ** -dec + 1e-9,
+                            force_metrics=frozenset({"roas"})))
         skip_spans.append((m.start(), m.end()))
+    for m in _EVERY_DOLLAR_RX.finditer(s):
+        v = float(m.group("n"))
+        dec = len(m.group("n").split(".")[1]) if "." in m.group("n") else 0
+        out.append(_Mention(m.start("c"), m.end("n"), m.group(0), v, "ratio", None, 0.5 * 10 ** -dec + 1e-9,
+                            force_metrics=frozenset({"roas"})))
+        skip_spans.append((m.start(), m.end()))
+    for m in _RANGE_RX.finditer(s):
+        g = m.groupdict()
+        n1, n2 = (g["n1"], g["n2"]) if g["n1"] else (g["n3"], g["n4"])
+        c = (g["c1"] or g["c2"] or g["c3"] or g["c4"] or "")
+        k1, k2 = (g["s1"], g["s2"]) if g["n1"] else (g["s3"], g["s4"])
+        pct = bool(g["u"] or g["u2"])
+        a, b = m.start(), m.end()
+        if re.fullmatch(r"(19[9]\d|20\d\d)", n1.replace(",", "")) or re.fullmatch(r"(19[9]\d|20\d\d)", n2.replace(",", "")):
+            continue
+        if not c and not pct and (_SPAN_AFTER_RX.match(s[b:]) or re.match(rf"\s*(?:{'|'.join(_MONTH_NAMES)})\b", s[b:])):
+            continue
+        if g["n1"] and not (c or pct or k1 or k2) and float(n1.replace(",", "")) >= float(n2.replace(",", "")):
+            continue                                   # "1-30", "10-5": not a range of results
+        lo = float(n1.replace(",", "")) * (1000 if (k1 or k2) else 1)
+        hi = float(n2.replace(",", "")) * (1000 if (k2 or k1) else 1)
+        dec = max(len(x.split(".")[1]) if "." in x else 0 for x in (n1, n2))
+        out.append(_Mention(a, b, m.group(0).strip(), hi, "currency" if c else ("percent" if pct else "count"),
+                            None, 0.5 * 10 ** -dec + 1e-9, None, None, None, c, (min(lo, hi), max(lo, hi))))
+        skip_spans.append((a, b))
     for m in _NUM_RX.finditer(s):
         a, b = m.start(), m.end()
         if any(x <= a < y for x, y in skip_spans):
@@ -400,6 +454,8 @@ def _mentions(s: str) -> list[_Mention]:
         v = float(num.replace(",", "")) * scale
         dec = len(num.split(".")[1]) if "." in num else 0
         tol = 0.5 * 10 ** -dec * scale
+        if scale > 1:
+            tol = min(tol, 0.03 * v)          # "$5k" is not a fair rounding of $5,480
         if dec == 0 and scale == 1 and v >= 1000:
             digits = num.replace(",", "")
             tz = len(digits) - len(digits.rstrip("0"))
@@ -424,7 +480,7 @@ def _mentions(s: str) -> list[_Mention]:
         if hm:
             hw = hm.group(1).lower()
             hedge = _HEDGE_KIND.get(hw, "approx")
-        out.append(_Mention(a, b, m.group(0).strip(), v, unit, sign, tol + 1e-9, hedge))
+        out.append(_Mention(a, b, m.group(0).strip(), v, unit, sign, tol + 1e-9, hedge, cur=cur or ""))
     out.sort(key=lambda x: x.start)
     return out
 
@@ -437,11 +493,11 @@ def _value_ok(stated: float, truth: float, tol: float, hedge: Optional[str]) -> 
     if hedge == "below":           # nearly / almost / just under
         return stated * 0.9 - tol <= truth <= stated + tol
     if hedge == "under":
-        return stated * 0.8 - tol <= truth <= stated + tol
+        return stated * 0.67 - tol <= truth <= stated + tol
     if hedge == "upto":
         return truth <= stated + tol
     if hedge in ("over", "atleast"):
-        return stated - tol <= truth <= stated * 1.2 + tol
+        return stated - tol <= truth <= stated * 1.5 + tol
     return abs(truth - stated) <= tol
 
 
@@ -558,7 +614,8 @@ class _Reader:
         specs = [
             (r"year[- ]on[- ]year|year[- ]over[- ]year|yoy|y/y|last year|a year ago|a year earlier|"
              r"the year before|same month last year|this time last year|the same month a year ago|"
-             rf"last {cur_n}", "year_ago", re.I),
+             rf"last {cur_n}|prior year|the prior year|previous year|the previous year|py|prior[- ]year|"
+             rf"same period last year|(?:in|than in|vs\.?|versus|from) {cur_y - 1}", "year_ago", re.I),
             (r"month[- ]on[- ]month|month[- ]over[- ]month|mom|m/m|last month|the previous month|"
              r"previous month|prior month|the month before", "previous", re.I),
             (r"this month|this period", "current", re.I),
@@ -584,6 +641,8 @@ class _Reader:
         before = self.s[:m.start]
         stripped = _HEDGE_RX.sub("", before).rstrip()
         ca, _ = self.clause(m.start)
+        if _COMPARE_CUE_RX.search(stripped) and self._channel_follows(m):
+            return "current", False        # "$44.20, compared to $40.00 on paid social": same month, other channel
         from_move = re.search(r"\bfrom(?:\s+(?:last month's|last year's|\w+'s|the|a))?\s*$", stripped, re.I) and (
             any(ca <= x and y <= m.start for x, y, _ in self.dir_hits) or
             re.match(r"\s*(?:\w+\s+){0,2}to\s+[£$€]?\d", self.s[m.end:]))
@@ -595,7 +654,8 @@ class _Reader:
         nums_after = [x for x in _NUM_RX.finditer(self.s, m.end)]
         next_num = nums_after[0].start() if nums_after else len(self.s)
         trailing = [mode for a, b, mode in self.periods
-                    if m.end <= a < min(cb, next_num) and not self._is_comparison_phrase(a)]
+                    if m.end <= a < min(cb, next_num) and not self._is_comparison_phrase(a)
+                    and not _ADV_RX.fullmatch(self.s[a:b])]
         if trailing:
             return trailing[0], True                  # "came in at 10,170 in August"
         if re.search(r"(?:\bto|\bat|\breached|\breaching|\bhit|\bhitting|\btotalled|\btotaled|\btotalling|"
@@ -607,8 +667,8 @@ class _Reader:
         ca, cb = self.clause(m.start)
         best = None
         for a, b, mode in self.periods:
-            if self._is_comparison_phrase(a):
-                continue
+            if self._is_comparison_phrase(a) or _ADV_RX.fullmatch(self.s[a:b]):
+                continue                    # "month over month" describes a change, not which month a level is from
             if a >= m.end and a > next_num:
                 continue
             d = (m.start - b) if b <= m.start else (a - m.end)
@@ -617,16 +677,31 @@ class _Reader:
                 best = ((tier, d), mode)
         return (best[1] if best else "current"), best is not None
 
+    def _channel_follows(self, m: _Mention) -> bool:
+        """Is the figure followed by 'from/for/on <channel>'?"""
+        for sa, sb, _ in self.scope_hits:
+            if m.end <= sa <= m.end + 40 and _CHANNEL_GAP_RX.fullmatch(self.s[m.end:sa]):
+                return True
+        return False
+
+    def _clause_has_number(self, pos: int) -> bool:
+        ca, cb = self.clause(pos)
+        return any(ca <= x.start() < cb and not re.fullmatch(r"(19[9]\d|20\d\d)", x.group("num"))
+                   for x in _NUM_RX.finditer(self.s))
+
     def comparison(self, m_or_pos) -> Optional[str]:
         pos = m_or_pos.start if isinstance(m_or_pos, _Mention) else m_or_pos
         ca, cb = self.clause(pos)
         modes_clause = [mode for a, b, mode in self.periods if ca <= a < cb and mode != "current"]
-        modes_sent = [mode for a, b, mode in self.periods if mode != "current"]
+        # A comparison phrase in a *different* clause that has its own figure belongs to that figure.
+        modes_sent = [mode for a, b, mode in self.periods if mode != "current"
+                      and not (not (ca <= a < cb) and self._clause_has_number(a))]
         for modes in (modes_clause, modes_sent):
             if modes:
                 # the nearest one wins
                 near = min(((abs(a - pos), mode) for a, b, mode in self.periods
-                            if mode != "current" and (modes is modes_sent or ca <= a < cb)), default=None)
+                            if mode != "current" and (ca <= a < cb or (
+                                modes is modes_sent and not self._clause_has_number(a)))), default=None)
                 if near:
                     return "yoy" if near[1] == "year_ago" else "mom"
         return None
@@ -642,7 +717,7 @@ class _Reader:
         for k, (sa, sb, sc) in hits:
             if b <= sa < b + min(45, lim):
                 gap = self.s[b:sa]
-                if re.search(r"(?:\bfrom|\bvia|\bthrough|\bby|\bon|\bin|\bacross|\bwith)\s+(?:the\s+|our\s+|your\s+|its\s+)?$",
+                if re.search(r"(?:\bfrom|\bvia|\bthrough|\bby|\bon|\bin|\bacross|\bwith|\bfor|\bat)\s+(?:the\s+|our\s+|your\s+|its\s+)?$",
                              gap, re.I) and not re.search(r"[.;]", gap) and \
                         not re.search(r"(?:mainly|mostly|largely|primarily|partly|chiefly|driven|thanks to|"
                                       r"due to|led by|because of)\b[^.;]*$", gap, re.I):
@@ -703,8 +778,13 @@ class _Reader:
                          after, re.I):
             return {"target"}
         ca, _ = self.clause(m.start)
+        if m.unit == "percent" and re.search(r"(?:convert(?:ed|s|ing)?|conversion rate(?: of| was| is| at)?|converting at)"
+                                              r"\s*(?:at\s+)?$", stripped, re.I):
+            return {"value"}                # "converted 6.7% of its sessions" is a rate, not a share
         if m.unit == "percent" and (_SHARE_RX.search(self.s[max(ca, m.start - 30):m.start]) or
                                     re.match(r"\s*(?:of\b|share\b)", after, re.I)):
+            if re.match(r"\s*(?:of\b)[^.;,]*\bconvert", self.s[m.end:], re.I):
+                return {"value"}            # "6.7% of sessions converted"
             return {"share"}
         if _CHANGE_NOUN_RX.search(stripped):
             return {"change", "delta"}
@@ -717,16 +797,18 @@ class _Reader:
                   "totaling", "was", "were", "is", "are", "with", "delivered", "drove", "generated",
                   "recorded", "produced", "brought", "spent", "spend", "attracted", "logged",
                   "saw", "achieved", "returned", "from", "against", "than", "versus", "vs", "a", "an"):
-            if lw == "a" and re.match(r"\s*(?:increase|rise|growth|jump|drop|fall|decline|decrease|uplift|gain)",
-                                      after, re.I):
+            if lw == "a" and _CHG_AFTER_RX.match(self.s[m.end:m.end + 60]):
                 return {"change", "delta"}
             return {"value"}
+        if lw == "by" and re.search(r"(?:beat|beating|exceed\w*|surpass\w*|miss\w*|short of|ahead of|behind|above|"
+                                    r"below|over|under)[^.;]*\b(?:target|goal)\b", before_clause := self.s[ca:m.start], re.I):
+            return {"target"}
         if lw == "by" or (m.sign is not None):
             return {"change", "delta"}
         if lw in _DIR_WORDS and _DIR_WORDS[lw] in ("up", "down", "good", "bad"):
             return {"change", "delta"}
-        if re.match(r"\s*(?:increase|rise|growth|jump|drop|fall|decline|decrease|uplift|gain|reduction|"
-                    r"improvement|higher|lower|more|fewer|less|up|down|better|worse)\b", after, re.I):
+        if _CHG_AFTER_RX.match(self.s[m.end:m.end + 60]) or re.match(
+                r"\s*(?:higher|lower|more|fewer|less|up|down|better|worse)\b", after, re.I):
             return {"change", "delta"}
         return None
 
@@ -749,10 +831,18 @@ class _Reader:
             return ("up" if hib else "down") if d == "good" else ("down" if hib else "up")
         return d
 
-    def future(self, pos: int) -> bool:
+    def future(self, pos: int, _depth: int = 0) -> bool:
+        if self.sent.future:
+            return True
         ca, cb = self.clause(pos)
         if _FUTURE_RX.search(self.s[ca:cb]):
             return True
+        # "We will publish 4 pages and target a 10% lift": the plan carries across "and"/"or"
+        if _depth < 4 and re.search(r"(?:\band|\bor)\s*$", self.s[:ca], re.I) and ca > 0:
+            j = len(self.s[:ca].rstrip())
+            prev_pos = max(0, j - 4)
+            if prev_pos < ca and self.future(prev_pos, _depth + 1):
+                return True
         # "Next month, we will…" — the future marker opens the sentence
         head = self.s[:ca]
         return bool(re.match(r"\s*(?:next month|next quarter|in (?:the )?(?:coming|next)|going forward|looking ahead|"
@@ -779,6 +869,7 @@ def verify(text: str, sheet: FactSheet) -> Verification:
 
     for sent in _sentences(masked, text):
         r = _Reader(sent, sheet, metric_rx, metric_words)
+        r.prev = None
         mentions = _mentions(sent.text)
         mentions += _qualitative(sent.text)
         mentions.sort(key=lambda x: x.start)
@@ -789,6 +880,7 @@ def verify(text: str, sheet: FactSheet) -> Verification:
             cited = _cited(cites, sent.start + m.end, sent.start + nxt_start)
             _check_mention(res, r, m, sheet, cited, raw_text=text)
         _check_directions(res, r, sheet, clauses_with_figures, text)
+        _check_rankings(res, r, sheet, text)
     return res
 
 
@@ -863,6 +955,8 @@ def _num_ok(f: Fact, m: _Mention) -> bool:
     if not _unit_ok(f, m):
         return False
     t = _truth(f, m)
+    if m.rng:
+        return m.rng[0] - m.tol <= t <= m.rng[1] + m.tol
     if m.hedge_band:
         signed = f.value
         if f.kind == "change":
@@ -904,8 +998,33 @@ def _check_mention(res: Verification, r: _Reader, m: _Mention, sheet: FactSheet,
         res.claims.append(Claim(quote, abs_a, abs_b, "forward_looking", None, cited))
         return
 
+    if m.cur and m.cur not in sheet.currency:
+        msg = (f"\"{quote}\" is written in {m.cur}, but this client's figures are in {sheet.currency}. "
+               f"The amount may be right; the currency symbol is not.")
+        res.issues.append(Issue("wrong_currency", quote, r.s.strip(), msg,
+                                f"Use {sheet.currency}, not {m.cur}.", abs_a, abs_b))
+        res.claims.append(Claim(quote, abs_a, abs_b, "issue", None, cited))
+        r.prev = None
+        return
+
     scopes = r.scope(m.start, m.end)
     metrics = r.metric(m.start, m.end, m.unit)
+    ca_, cb_ = r.clause(m.start)
+    own_metric = any(ca_ <= h[0] < cb_ for h in r.metric_hits)
+    before_txt = _HEDGE_RX.sub("", s[:m.start]).rstrip()
+    prev = getattr(r, "prev", None)
+    inherited_kinds = None
+    if prev and not own_metric and prev["unit"] == m.unit and prev["metrics"] and m.unit in ("percent", "count"):
+        metrics = prev["metrics"]                       # "up from 5.6%": the same measure as the figure before it
+    if prev and prev["unit"] == m.unit and _COMPARE_CUE_RX.search(before_txt):
+        inherited_kinds = prev["kinds"]                 # "31.8% of leads, compared to 41.1% from paid search"
+    forced_rate = m.unit == "percent" and bool(
+        re.search(r"(?:convert(?:ed|s|ing)?|conversion rate(?: of| was| is| at)?|converting at)\s*(?:at\s+)?$",
+                  before_txt, re.I) or re.match(r"\s*of\b[^.;,]*\bconvert", s[m.end:], re.I))
+    if forced_rate:
+        metrics = frozenset({"conv_rate"})
+    if m.force_metrics:
+        metrics = m.force_metrics
     if m.unit == "currency" and re.match(r"\s*(?:each|apiece|a head|per head|a time)\b", s[m.end:], re.I):
         metrics = frozenset({"cpc"}) if metrics and "clicks" in metrics else \
             frozenset({"cpa"}) if metrics and "conversions" in metrics else frozenset({"cpa", "cpc"})
@@ -913,9 +1032,15 @@ def _check_mention(res: Verification, r: _Reader, m: _Mention, sheet: FactSheet,
             re.match(r"\s*(?:places|spots|positions)\b", s[m.end:], re.I):
         m.kinds = {"delta"}
     # "2x the traffic" with a non-ROAS metric is a change claim
-    if m.unit == "ratio" and metrics is not None and "roas" not in metrics:
+    if m.unit == "ratio" and metrics is not None and "roas" not in metrics and not m.force_metrics:
         m.unit, m.value, m.tol, m.kinds = "percent", (m.value - 1) * 100, m.tol * 100, {"change"}
     kinds = r.kinds(m)
+    if inherited_kinds and (kinds is None or kinds == {"value"}):
+        kinds = inherited_kinds
+    if forced_rate:
+        kinds = {"value"}
+    if m.force_metrics:
+        kinds = None
     period, explicit = r.figure_period(m)
     comparison = r.comparison(m)
     # A figure in a sentence that names no channel reads as the account total.
@@ -923,9 +1048,14 @@ def _check_mention(res: Verification, r: _Reader, m: _Mention, sheet: FactSheet,
         if any(f.scope == TOTAL and f.metric in metrics for f in sheet.facts):
             scopes = frozenset({TOTAL})
     ctx = _Ctx(scopes, metrics, kinds, period, explicit, comparison, sheet)
+    r.prev = {"unit": m.unit, "kinds": kinds, "metrics": metrics}
 
     num_ok = [f for f in sheet.facts if _num_ok(f, m)]
     good = [f for f in num_ok if not ctx.fails(f)]
+    if not good and m.unit == "count" and not own_metric and not m.sign and _activity_noun(s, m):
+        # "We published 4 new articles": something the agency did, not a figure from the data
+        res.claims.append(Claim(quote, abs_a, abs_b, "unchecked", None, cited))
+        return
     if good:
         best = next((f for f in good if f.id == cited), None) or \
             sorted(good, key=lambda f: _KIND_ORDER.index(f.kind))[0]
@@ -986,6 +1116,16 @@ def _check_mention(res: Verification, r: _Reader, m: _Mention, sheet: FactSheet,
         res.issues.append(Issue("unsupported", quote, sentence, msg, hint, abs_a, abs_b,
                                 expected.id if expected else None))
     res.claims.append(Claim(quote, abs_a, abs_b, "issue", None, cited))
+
+
+def _activity_noun(s: str, m: _Mention) -> bool:
+    """A bare count followed by a noun that isn't one of our metrics: '4 new articles', '4,800 subscribers'."""
+    w = re.match(r"\s+([A-Za-z][\w'-]*)", s[m.end:])
+    if not w:
+        return False
+    word = w.group(1).lower()
+    return word not in _STOP_NOUNS and word not in _DIR_WORDS and word not in (
+        "ahead", "behind", "short", "above", "below", "off", "away", "more", "extra", "additional")
 
 
 def _describe(ctx: _Ctx) -> str:
@@ -1118,3 +1258,120 @@ def _check_directions(res: Verification, r: _Reader, sheet: FactSheet, clauses_w
             quote = raw_text[qa:qb].strip(" ,;")
             res.issues.append(_dir_issue(c, sheet, stated, quote, r.s.strip(), qa, qb, c))
             res.claims.append(Claim(quote, qa, qb, "issue"))
+
+
+# --------------------------------------------------------------------------- #
+# Ranking claims: "largest source of traffic", "most cost-efficient", "the only channel where leads fell"
+# --------------------------------------------------------------------------- #
+_SUPER_RX = re.compile(r"(?<![\w-])(?:largest|biggest|top|leading|main|primary|strongest|best|highest|greatest|"
+                       r"number[- ]one)\s+(?:single\s+)?(?:\w+\s+){0,2}?(?:source|channel|driver|contributor|performer|"
+                       r"generator)s?\b", re.I)
+_EFFICIENT_RX = re.compile(r"(?<![\w-])(?:(?:most|more)\s+(?:cost[- ]?efficient|cost[- ]?effective|efficient)|cheapest|"
+                           r"lowest[- ]cost|lowest\s+(?:cost per \w+|cpa|cpl|cpc|cost[- ]per[- ]\w+))", re.I)
+_BEST_METRIC_RX = re.compile(r"(?<![\w-])(highest|best|strongest|top|lowest|worst|weakest)\s+(roas|return on ad spend|"
+                             r"conversion rate|ctr|click[- ]through rate|cpc|cost per click|cpa|cpl)\b", re.I)
+_ONLY_RX = re.compile(r"(?<![\w-])(?:the |our |your )?only\s+(?:single\s+)?(?:channel|source)\b[^.;]{0,50}?"
+                      r"\b(fell|dropped|declined|decreased|slipped|dipped|rose|grew|increased|climbed|improved|gained)\b", re.I)
+_EVERY_RX = re.compile(r"(?<![\w-])(?:every|each|all)\s+(?:single\s+)?(?:other\s+)?channels?\b[^.;,]{0,30}?"
+                       r"\b(fell|dropped|declined|decreased|slipped|rose|grew|increased|climbed|improved)\b", re.I)
+_UPWORDS = ("rose", "grew", "increased", "climbed", "improved", "gained")
+_RANK_METRIC = {"roas": ("roas", True), "return on ad spend": ("roas", True), "conversion rate": ("conv_rate", True),
+                "ctr": ("ctr", True), "click-through rate": ("ctr", True), "click through rate": ("ctr", True),
+                "cpc": ("cpc", False), "cost per click": ("cpc", False), "cpa": ("cpa", False), "cpl": ("cpa", False)}
+
+
+def _rank_subject(r: _Reader, before: int) -> Optional[str]:
+    hits = [h for h in r.scope_hits if h[0] < before and TOTAL not in h[2]]
+    if hits:
+        sc = hits[-1][2]
+    elif r.sent.inherited and TOTAL not in r.sent.inherited:
+        sc = r.sent.inherited
+    else:
+        return None
+    return next(iter(sc)) if len(sc) == 1 else None
+
+
+def _channel_facts(sheet: FactSheet, metric: str) -> dict[str, Fact]:
+    return {f.scope: f for f in sheet.facts
+            if f.metric == metric and f.kind == "value" and f.period == "current" and f.scope != TOTAL}
+
+
+def _rank_issue(res: Verification, r: _Reader, a: int, b: int, quote: str, msg: str, hint: str, raw: str) -> None:
+    abs_a, abs_b = r.sent.start + a, r.sent.start + b
+    res.issues.append(Issue("wrong_ranking", raw[abs_a:abs_b], r.s.strip(), msg, hint, abs_a, abs_b))
+    res.claims.append(Claim(raw[abs_a:abs_b], abs_a, abs_b, "issue"))
+
+
+def _check_rankings(res: Verification, r: _Reader, sheet: FactSheet, raw: str) -> None:
+    s = r.s
+    if r.sent.future or _FUTURE_RX.search(s):
+        return
+
+    def ranked(metric: str, highest: bool, subject: Optional[str], m: re.Match, what: str) -> None:
+        facts = _channel_facts(sheet, metric)
+        if subject is None or subject not in facts or len(facts) < 2:
+            return
+        best = max(facts.values(), key=lambda f: f.value) if highest else min(facts.values(), key=lambda f: f.value)
+        mine = facts[subject]
+        if (mine.value >= best.value - 1e-9) if highest else (mine.value <= best.value + 1e-9):
+            return
+        word = "highest" if highest else "lowest"
+        msg = (f"{channel_label(subject)} isn't the {what}: {channel_label(best.scope)} has the {word} "
+               f"{_metric_name(metric, sheet)} ({sheet.fmt(best)} [{best.id}]) against {channel_label(subject)}'s "
+               f"{sheet.fmt(mine)} [{mine.id}].")
+        _rank_issue(res, r, m.start(), m.end(), m.group(0), msg, msg + " Correct the claim or drop it.", raw)
+
+    for m in _SUPER_RX.finditer(s):
+        after = [h for h in r.metric_hits if h[0] >= m.end()]
+        before = [h for h in r.metric_hits if h[1] <= m.start()]
+        hit = (after or before or [None])[0 if after else -1] if (after or before) else None
+        if not hit:
+            continue
+        metric = next((x for x in ("conversions", "sessions", "revenue", "spend") if x in hit[2]), None)
+        if metric:
+            ranked(metric, metric != "spend" or True, _rank_subject(r, m.start()), m,
+                   f"{m.group(0).split()[0].lower()} source of {_metric_name(metric, sheet)}")
+    for m in _EFFICIENT_RX.finditer(s):
+        metric = "cpc" if re.search(r"click|cpc", s[m.start():m.end() + 25], re.I) else "cpa"
+        ranked(metric, False, _rank_subject(r, m.start()), m, "most cost-efficient channel")
+    for m in _BEST_METRIC_RX.finditer(s):
+        metric, hib = _RANK_METRIC[m.group(2).lower()]
+        want_high = m.group(1).lower() in ("highest", "best", "strongest", "top")
+        highest = want_high if hib else not want_high
+        ranked(metric, highest, _rank_subject(r, m.start()), m, f"channel with the {m.group(1).lower()} {m.group(2)}")
+
+    def metric_in_sentence() -> str:
+        for h in r.metric_hits:
+            for x in ("conversions", "sessions", "revenue", "spend"):
+                if x in h[2]:
+                    return x
+        return "conversions"
+
+    for m in _ONLY_RX.finditer(s):
+        metric = metric_in_sentence()
+        up = m.group(1).lower() in _UPWORDS
+        movers = []
+        for scope, f in _channel_facts(sheet, metric).items():
+            ch = sheet.find(scope, metric, "change", "current", "mom")
+            if ch and ((ch.value > 0) if up else (ch.value < 0)) and ch.direction != "flat":
+                movers.append((scope, ch))
+        subject = _rank_subject(r, m.start())
+        names = ", ".join(f"{channel_label(sc)} ({sheet.fmt(c)} [{c.id}])" for sc, c in movers) or "none"
+        if len(movers) != 1 or (subject and movers and movers[0][0] != subject):
+            msg = (f"It isn't the only channel where {_metric_name(metric, sheet)} "
+                   f"{'rose' if up else 'fell'}. Channels where it did: {names}.")
+            _rank_issue(res, r, m.start(), m.end(), m.group(0), msg, msg + " Correct the claim or drop it.", raw)
+    for m in _EVERY_RX.finditer(s):
+        if re.search(r"(?:across|for|in|on|from|over|of|by|with|to|and)\s+$", s[:m.start()], re.I):
+            continue                      # "across all channels, sessions rose" is about the total
+        metric = metric_in_sentence()
+        up = m.group(1).lower() in _UPWORDS
+        off = []
+        for scope in _channel_facts(sheet, metric):
+            ch = sheet.find(scope, metric, "change", "current", "mom")
+            if ch and ((ch.value < 0) if up else (ch.value > 0)):
+                off.append(f"{channel_label(scope)} ({sheet.fmt(ch)} [{ch.id}])")
+        if off:
+            msg = (f"Not every channel's {_metric_name(metric, sheet)} {'rose' if up else 'fell'}: "
+                   + ", ".join(off) + " moved the other way.")
+            _rank_issue(res, r, m.start(), m.end(), m.group(0), msg, msg + " Correct the claim or drop it.", raw)

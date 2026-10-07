@@ -128,7 +128,7 @@ CHANNELS: dict[str, ChannelDef] = {
 }
 
 # Words that refer to the whole account rather than one channel.
-TOTAL_WORDS = ("overall", "in total", "total", "across all channels", "all channels",
+TOTAL_WORDS = ("the account", "the account as a whole", "the business", "overall", "in total", "total", "across all channels", "all channels",
                "account-wide", "site-wide", "sitewide", "the website", "the site",
                "combined", "altogether", "whole account", "across the board",
                "every channel", "all sources")
