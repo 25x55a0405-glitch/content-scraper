@@ -147,6 +147,7 @@ def build_facts(current: PeriodData, previous: Optional[PeriodData] = None,
     prev_lbl = period_label(previous.period) if sheet.previous_period else ""
     yago_lbl = period_label(year_ago.period) if sheet.year_ago_period else ""
 
+    current = _with_missing_channels(current, previous)
     scopes = ([TOTAL] if TOTAL in current.values else []) + current.channels()
     metric_order = [m for m in METRICS]
 
@@ -214,6 +215,30 @@ def build_facts(current: PeriodData, previous: Optional[PeriodData] = None,
         f.id = f"F{i}"
     sheet.facts = facts
     return sheet
+
+
+# Analytics exports leave out channels with no traffic. If a channel had sessions last month
+# and is absent this month while other channels report sessions, it had none.
+ZERO_FILL = ("sessions", "conversions", "revenue")
+
+
+def _with_missing_channels(current: PeriodData, previous: Optional[PeriodData]) -> PeriodData:
+    if not previous or previous.is_empty():
+        return current
+    from .model import compute_derived
+    out = PeriodData.from_dict(current.to_dict())
+    reported = {m for s, row in current.values.items() if s != TOTAL for m in row}
+    for scope, row in previous.values.items():
+        if scope == TOTAL or scope in current.values:
+            continue
+        added = False
+        for m in ZERO_FILL:
+            if m in row and m in reported:
+                out.set(scope, m, 0.0, "not in this month's export")
+                added = True
+        if added:
+            compute_derived(out)
+    return out
 
 
 def singular(label: str) -> str:

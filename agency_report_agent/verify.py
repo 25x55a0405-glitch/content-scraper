@@ -531,7 +531,7 @@ class _Reader:
                     continue
             if w == "held" and re.match(r"\s+(?:back|up|off)\b", after):
                 continue
-            if w in ("ahead", "behind") and not re.match(r"\s+of\s+(?:target|goal|plan|forecast)", after, re.I):
+            if w in ("ahead", "behind") and not re.match(r"\s+of\s+(?:the\s+|your\s+|our\s+|its\s+)?(?:monthly\s+|agreed\s+)?(?:target|goal|plan|forecast)", after, re.I):
                 continue
             if w == "cut" and re.search(r"\b(?:a|the)\s+$", before):
                 continue
@@ -702,7 +702,8 @@ class _Reader:
                          r"(?:the\s+|our\s+|its\s+|their\s+|a\s+)?(?:[£$€]?[\d,.]+\s+)?(?:monthly\s+|agreed\s+)?(?:target|goal)\b",
                          after, re.I):
             return {"target"}
-        if m.unit == "percent" and (_SHARE_RX.search(self.s[max(0, m.start - 30):m.start]) or
+        ca, _ = self.clause(m.start)
+        if m.unit == "percent" and (_SHARE_RX.search(self.s[max(ca, m.start - 30):m.start]) or
                                     re.match(r"\s*(?:of\b|share\b)", after, re.I)):
             return {"share"}
         if _CHANGE_NOUN_RX.search(stripped):
