@@ -172,20 +172,42 @@ class Desk:
             self._futures.pop(0).result()
 
     # --------------------------------------------------------------- review
-    def review(self, client_id: str, period: str, decision: dict, actor: str = "") -> dict:
+    def _check_reviewable(self, rec: Optional[dict], decision: dict, queued: bool = False) -> None:
+        ok_status = (g.NEEDS_REVIEW, RUNNING) if queued else (g.NEEDS_REVIEW,)
+        if not rec or rec.get("status") not in ok_status:
+            raise DeskError("This report isn't waiting for review.")
+        if decision.get("action") == "request_changes" and rec.get("writer") != "claude" and \
+                (decision.get("change_request") or "").strip():
+            raise DeskError("The template writer can't follow written requests. Edit the text directly, "
+                            "or switch drafting to Claude in Settings and draft again.")
+
+    def review_in_background(self, client_id: str, period: str, decision: dict, actor: str = ""):
+        """For decisions that redraft (slow with Claude): queue it and show the report as drafting."""
+        with self._reg_lock:
+            rec = self._record(client_id, period)
+            self._check_reviewable(rec, decision)
+            self._set_record(client_id, period, status=RUNNING)
+        fut = self._pool.submit(self._safe_review, client_id, period, decision, actor)
+        self._futures.append(fut)
+        return fut
+
+    def _safe_review(self, client_id, period, decision, actor):
+        try:
+            return self.review(client_id, period, decision, actor, _queued=True)
+        except Exception as e:  # noqa: BLE001
+            rec = self._record(client_id, period) or {}
+            if rec.get("status") == RUNNING:
+                self._set_record(client_id, period, status=self._graph_status(rec), error=str(e)[:500])
+
+    def review(self, client_id: str, period: str, decision: dict, actor: str = "", _queued: bool = False) -> dict:
         """Resume a run waiting for review with the reviewer's decision."""
         with self._locks[f"{client_id}:{period}"]:
             rec = self._record(client_id, period)
-            if not rec or rec.get("status") != g.NEEDS_REVIEW:
-                raise DeskError("This report isn't waiting for review.")
+            self._check_reviewable(rec, decision, _queued)
             snap = self.graph.get_state(self._config(rec))
             if "review" not in (snap.next or ()):
                 raise DeskError("This report isn't waiting for review.")
             decision = dict(decision)
-            if decision.get("action") == "request_changes" and rec.get("writer") != "claude" and \
-                    (decision.get("change_request") or "").strip():
-                raise DeskError("The template writer can't follow written requests. Edit the text directly, "
-                                "or switch drafting to Claude in Settings.")
             self._set_record(client_id, period, status=RUNNING)
             try:
                 self.graph.invoke(Command(resume=decision), self._config(rec))

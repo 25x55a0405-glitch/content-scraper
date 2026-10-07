@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Agency settings</h1><p class="sub">Your name, logo and colour appear on every client report. Report Desk itself never does.</p></div></div>
+<form method="post" action="/settings" enctype="multipart/form-data" class="grid-2">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <section class="card"><div class="card-head"><h2>Brand</h2></div><div class="card-body">
+    <label class="field"><span class="field-label">Agency name</span><input type="text" name="name" value="{{ agency.name }}" required maxlength="80"></label>
+    <label class="field"><span class="field-label">Brand colour</span>
+      <span class="color-row"><input type="color" value="{{ agency.brand_color }}" data-sync="brand_color" aria-label="Pick a colour"><input type="text" id="brand_color" name="brand_color" value="{{ agency.brand_color }}" pattern="#[0-9a-fA-F]{6}" maxlength="7"></span></label>
+    <label class="field"><span class="field-label">Logo (PNG, JPEG, SVG or WebP, under 1 MB)</span><input type="file" name="logo" accept="image/png,image/jpeg,image/svg+xml,image/webp"></label>
+    {% if agency.logo %}<div class="logo-preview"><img src="/settings/logo" alt="Current logo"><label class="check"><input type="checkbox" name="remove_logo" value="1"> Remove logo</label></div>{% endif %}
+    <label class="field"><span class="field-label">Currency</span><select name="currency">{% for c in currencies %}<option {% if c == agency.currency %}selected{% endif %}>{{ c }}</option>{% endfor %}</select></label>
+  </div></section>
+  <section class="card"><div class="card-head"><h2>Writing</h2></div><div class="card-body">
+    <fieldset class="field"><legend class="field-label">Who writes the first draft</legend>
+      <label class="check"><input type="radio" name="drafting" value="template" {% if agency.drafting != 'claude' %}checked{% endif %}> Template writer — free, consistent, always correct by construction</label>
+      <label class="check"><input type="radio" name="drafting" value="claude" {% if agency.drafting == 'claude' %}checked{% endif %}> Claude — reads like your best account manager, follows your house voice, can take requested changes</label>
+      {% if not claude_ready %}<p class="hint warn">No Anthropic API key is set on this server, so drafts will use the template writer until one is added (environment variable <code>ANTHROPIC_API_KEY</code>).</p>{% endif %}
+    </fieldset>
+    <label class="field"><span class="field-label">Claude model</span><select name="model">{% for k, label in models.items() %}<option value="{{ k }}" {% if k == agency.model %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+    <label class="field"><span class="field-label">House voice</span><textarea name="voice" rows="4" maxlength="1500">{{ agency.voice }}</textarea></label>
+    <label class="field"><span class="field-label">Reviewers (one per line)</span><textarea name="reviewers" rows="4">{{ agency.reviewers|join('\n') }}</textarea></label>
+  </div></section>
+  <div class="actions span-2"><button class="btn btn-primary" type="submit">Save settings</button></div>
+</form>
+{% endblock %}

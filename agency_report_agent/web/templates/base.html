@@ -3,26 +3,41 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{% block title %}Report Desk{% endblock %}</title>
+<title>{% block title %}Report Desk{% endblock %} · {{ agency.name }}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/app.css">
+<script src="/static/app.js" defer></script>
 </head>
-<body>
+<body {% block bodyattrs %}{% endblock %}>
+<a class="skip" href="#main">Skip to content</a>
 <header class="topbar">
   <div class="topbar-inner">
     <a class="wordmark" href="/">
-      <span class="mark"><span></span></span>
+      <span class="mark" aria-hidden="true"><span></span></span>
       <b>Report Desk</b>
     </a>
+    {% if user %}
+    <nav class="nav" aria-label="Main">
+      <a href="/month/{{ current_period }}" {% if request.url.path.startswith('/month') %}aria-current="page"{% endif %}>Months</a>
+      <a href="/clients" {% if request.url.path == '/clients' %}aria-current="page"{% endif %}>Clients</a>
+      <a href="/activity" {% if request.url.path.startswith('/activity') %}aria-current="page"{% endif %}>Activity</a>
+      <a href="/settings" {% if request.url.path.startswith('/settings') %}aria-current="page"{% endif %}>Settings</a>
+    </nav>
     <div class="topbar-meta">
-      <span>{{ agency.name }}</span>
-      <span class="chip">{{ period }}</span>
+      <span class="who">{{ user }}</span>
+      <form method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="linkbtn" type="submit">Sign out</button></form>
     </div>
+    {% endif %}
   </div>
 </header>
-<main class="page">
+{% if no_password and user %}
+<div class="banner">No team password is set, so Report Desk only listens on this computer. Set <code>REPORT_DESK_PASSWORD</code> before sharing it with your team.</div>
+{% endif %}
+<main class="page" id="main">
+  {% for kind, msg in flashes %}<div class="flash {{ kind }}" role="status">{{ msg }}</div>{% endfor %}
   {% block content %}{% endblock %}
 </main>
 </body>

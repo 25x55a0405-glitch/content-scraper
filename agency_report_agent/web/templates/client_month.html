@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% block title %}{{ client.name }} · {{ period_label(period) }}{% endblock %}
+{% block bodyattrs %}{% if st.status == 'running' %}data-poll="/clients/{{ client.id }}/{{ period }}/status" data-poll-key="status" data-poll-while="running"{% endif %}{% endblock %}
+{% block content %}
+<a class="backlink" href="/month/{{ period }}">← {{ period_label(period) }} reports</a>
+<div class="page-head">
+  <div>
+    <div class="monthnav">
+      <a href="/clients/{{ client.id }}/{{ prev_period }}" aria-label="Previous month">‹</a>
+      <span class="chip">{{ period }}</span>
+      <a href="/clients/{{ client.id }}/{{ next_period }}" aria-label="Next month">›</a>
+    </div>
+    <h1>{{ client.name }}</h1>
+    <p class="sub">{{ client.sector or 'No sector set' }} · counts “{{ client.conversion_label }}”{% if client.monthly_target %} · target {{ client.monthly_target|n }} a month{% endif %} · <a href="/clients/{{ client.id }}/settings">Edit client</a></p>
+  </div>
+  <div class="actions"><span class="pill {{ st.status }}"><span class="dot"></span>{{ st.status_label }}</span></div>
+</div>
+
+<div class="review-grid">
+<div class="stack-lg">
+
+  <section class="card">
+    <div class="card-head"><h2>{{ period_label(period) }} report</h2></div>
+    <div class="card-body">
+      {% set v = st['values'] %}
+      {% if st.status == 'running' %}
+        <p class="working"><span class="spinner" aria-hidden="true"></span> Drafting and fact-checking… this page refreshes when it's ready.</p>
+      {% elif st.status == 'needs_review' %}
+        <p>A draft is ready. {% if v.verification and v.verification.ok %}<span class="okmark">✓ All {{ v.verification.checked }} figures are backed by the data.</span>{% else %}<span class="flagnote">Some figures need attention.</span>{% endif %}</p>
+        <div class="actions"><a class="btn btn-primary" href="/clients/{{ client.id }}/{{ period }}/review">Review the draft</a></div>
+      {% elif st.status == 'blocked' %}
+        <div class="callout crit"><h3>Can't draft yet</h3><ul>{% for p in v.problems or [] %}<li>{{ p }}</li>{% endfor %}</ul></div>
+      {% elif st.status == 'failed' %}
+        <div class="callout crit"><h3>Something went wrong</h3><p>{{ st.error or 'The run stopped unexpectedly.' }}</p></div>
+      {% elif st.status == 'approved' %}
+        <p class="okmark">✓ Approved by {{ v.reviewer }}.</p>
+      {% elif st.status == 'rejected' %}
+        <p class="muted">Marked as not sending this month.</p>
+      {% else %}
+        <p class="muted">{% if sources %}The data is in. Draft the report when you're ready.{% else %}Upload this month's exports below, then draft the report.{% endif %}</p>
+      {% endif %}
+      {% if sources and st.status not in ('running',) %}
+      <form method="post" action="/clients/{{ client.id }}/{{ period }}/draft" class="actions top-gap">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="btn {{ 'btn-ghost' if st.status in ('needs_review', 'approved') else 'btn-primary' }}" type="submit"
+          {% if st.status == 'needs_review' %}data-confirm="Start a new draft? The current draft and any edits will be replaced."{% endif %}>
+          {{ 'Draft again from the data' if st.status in ('needs_review', 'approved', 'rejected', 'failed', 'blocked') else 'Draft the report' }}</button>
+      </form>
+      {% endif %}
+      {% if st.reports %}
+      <h3 class="h3">Approved versions</h3>
+      <ul class="versions">
+        {% for rep in st.reports|reverse %}
+        <li><span>Version {{ rep.version }} · {{ rep.reviewer }} · {{ rep.approved_at|when }}</span>
+          <span class="actions"><a class="btn btn-ghost sm" href="/reports/{{ client.id }}/{{ period }}/v{{ rep.version }}.html" target="_blank" rel="noopener">View</a>
+          {% if rep.has_pdf %}<a class="btn btn-primary sm" href="/reports/{{ client.id }}/{{ period }}/v{{ rep.version }}.pdf">PDF</a>{% endif %}</span></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><h2>Figures for {{ period_label(period) }}</h2><span class="muted small">after combining every source</span></div>
+    {% if channels %}
+    <div class="table-scroll"><table class="rows compact">
+      <thead><tr><th scope="col">Channel</th><th scope="col" class="right">Sessions</th><th scope="col" class="right">{{ client.conversion_label|capitalize }}</th><th scope="col" class="right">Spend</th><th scope="col" class="right">Revenue</th><th scope="col" class="right">Clicks</th></tr></thead>
+      <tbody>{% for row in channels %}<tr class="{{ 'total' if row.scope == 'total' else '' }}">
+        <th scope="row">{{ row.label }}</th>
+        {% for m in ('sessions', 'conversions', 'spend', 'revenue', 'clicks') %}
+        <td class="right num" title="{{ SOURCE_NAMES.get(row.origin.get(m, ''), row.origin.get(m, '')) }}">{% if row.cells[m] is not none %}{{ '{:,.2f}'.format(row.cells[m]) if m in ('spend', 'revenue') else '{:,.0f}'.format(row.cells[m]) if row.cells[m] == row.cells[m]|int else '{:,.2f}'.format(row.cells[m]) }}{% else %}<span class="muted">—</span>{% endif %}</td>
+        {% endfor %}</tr>{% endfor %}</tbody>
+    </table></div>
+    {% if notes %}<div class="card-body"><div class="callout"><h3>Sources disagree</h3><ul>{% for n in notes %}<li>{{ n }}</li>{% endfor %}</ul></div></div>{% endif %}
+    {% else %}
+    <div class="card-body"><p class="muted">No figures yet.</p></div>
+    {% endif %}
+  </section>
+
+  <section class="card" id="upload">
+    <div class="card-head"><h2>Upload exports</h2><span class="muted small">CSV or Search Console zip, up to {{ max_mb }} MB</span></div>
+    <div class="card-body">
+      <form method="post" action="/clients/{{ client.id }}/{{ period }}/upload" enctype="multipart/form-data" class="upload">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label class="field"><span class="field-label">Platform</span>
+          <select name="source_type" required>
+            {% for key, (title, how) in source_help.items() %}<option value="{{ key }}">{{ title }}</option>{% endfor %}
+          </select></label>
+        <label class="field"><span class="field-label">File</span>
+          <input type="file" name="file" required accept=".csv,.tsv,.txt,.zip,text/csv,application/zip"></label>
+        <button class="btn btn-primary" type="submit">Upload</button>
+      </form>
+      <details class="howto"><summary>Where to find each export</summary>
+        <dl>{% for key, (title, how) in source_help.items() %}<dt>{{ title }}</dt><dd>{{ how }}</dd>{% endfor %}</dl>
+      </details>
+      {% if sources %}
+      <h3 class="h3">Uploaded for {{ period_label(period) }}</h3>
+      <ul class="files">
+        {% for s in sources %}
+        <li><div><b>{{ SOURCE_NAMES.get(s.type, s.type) }}</b> <span class="muted">{{ s.filename }} · {{ s.imported_at|when }}</span>
+          {% for w in s.warnings %}<div class="flagnote small">{{ w }}</div>{% endfor %}</div>
+          <form method="post" action="/clients/{{ client.id }}/{{ period }}/sources/{{ s.id }}/delete">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="btn btn-danger sm" type="submit" data-confirm="Remove this file's figures from {{ period_label(period) }}?">Remove</button></form></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </div>
+  </section>
+
+  <details class="card disclosure">
+    <summary class="card-head"><h2>Enter or correct figures by hand</h2><span class="muted small">overrides uploaded files</span></summary>
+    <form method="post" action="/clients/{{ client.id }}/{{ period }}/manual" class="card-body">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="table-scroll"><table class="rows compact manual">
+        <thead><tr><th scope="col">Channel</th><th scope="col">Sessions</th><th scope="col">{{ client.conversion_label|capitalize }}</th><th scope="col">Spend</th><th scope="col">Revenue</th></tr></thead>
+        <tbody>
+        {% for slug, label in manual_channels %}
+          <tr><th scope="row">{{ label }}</th>
+          {% for m in ('sessions', 'conversions', 'spend', 'revenue') %}
+            <td><input type="text" inputmode="decimal" name="v__{{ slug }}__{{ m }}" aria-label="{{ label }} {{ m }}"
+              value="{% for s in sources if s.type == 'manual' %}{{ s['values'].get(slug, {}).get(m, '') }}{% endfor %}"></td>
+          {% endfor %}</tr>
+        {% endfor %}
+        </tbody>
+      </table></div>
+      <button class="btn btn-primary top-gap" type="submit">Save figures</button>
+    </form>
+  </details>
+</div>
+
+<aside class="stack-lg">
+  {% set v = st['values'] %}
+  {% if v.warnings %}<div class="callout"><h3>Check before drafting</h3><ul>{% for w in v.warnings %}<li>{{ w }}</li>{% endfor %}</ul></div>{% endif %}
+  <section class="card"><div class="card-head"><h2>Months with data</h2></div>
+    <div class="card-body">{% for p in periods|reverse %}<a class="chip link" href="/clients/{{ client.id }}/{{ p }}">{{ period_label(p) }}</a> {% else %}<p class="muted">None yet.</p>{% endfor %}</div></section>
+  {% if v.log %}
+  <section class="card"><div class="card-head"><h2>Run log</h2></div>
+    <div class="card-body"><ol class="loglist">{% for line in v.log %}<li><span class="n">{{ loop.index }}</span><span>{{ line }}</span></li>{% endfor %}</ol></div></section>
+  {% endif %}
+  <p class="small"><a href="/activity?client={{ client.id }}">Activity for this client →</a></p>
+</aside>
+</div>
+{% endblock %}

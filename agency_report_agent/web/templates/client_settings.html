@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}{{ client.name }} settings{% endblock %}
+{% block content %}
+<a class="backlink" href="/clients/{{ client.id }}/{{ current_period }}">← {{ client.name }}</a>
+<div class="page-head"><div><h1>{{ client.name }}</h1><p class="sub">Client settings</p></div></div>
+<section class="card narrow"><form method="post" action="/clients/{{ client.id }}/settings" class="card-body">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label class="field"><span class="field-label">Client name</span><input type="text" name="name" value="{{ client.name }}" required maxlength="120"></label>
+  <label class="field"><span class="field-label">Sector</span><input type="text" name="sector" value="{{ client.sector }}" maxlength="200"></label>
+  <label class="field"><span class="field-label">What counts as a conversion</span><input type="text" name="conversion_label" value="{{ client.conversion_label }}" maxlength="40"></label>
+  <label class="field"><span class="field-label">Monthly target</span><input type="text" name="monthly_target" value="{{ client.monthly_target|int if client.monthly_target else '' }}" inputmode="numeric"></label>
+  <label class="field"><span class="field-label">Context for the writer</span><textarea name="context" rows="4" maxlength="2000">{{ client.context }}</textarea></label>
+  <label class="check"><input type="checkbox" name="archived" value="1" {% if client.archived %}checked{% endif %}> Archived (no longer on monthly reporting)</label>
+  <button class="btn btn-primary" type="submit">Save</button>
+</form></section>
+{% endblock %}

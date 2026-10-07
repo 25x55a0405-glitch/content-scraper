@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Sign in{% endblock %}
+{% block content %}
+<div class="auth">
+  <div class="card">
+    <div class="card-body">
+      <h1>Sign in</h1>
+      <p class="sub">{{ agency.name }} · Report Desk</p>
+      {% if error %}<div class="flash error" role="alert">{{ error }}</div>{% endif %}
+      <form method="post" action="/login" class="stack">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="next" value="{{ next }}">
+        <label class="field"><span class="field-label">Your name</span>
+          <input type="text" name="name" list="people" autocomplete="name" required maxlength="60" autofocus></label>
+        <datalist id="people">{% for r in reviewers %}<option value="{{ r }}">{% endfor %}</datalist>
+        {% if not no_password %}
+        <label class="field"><span class="field-label">Team password</span>
+          <input type="password" name="password" autocomplete="current-password" required></label>
+        {% else %}
+        <p class="hint">No team password is set, so this copy only works on this computer.</p>
+        {% endif %}
+        <button class="btn btn-primary wide" type="submit">Sign in</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

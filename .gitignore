@@ -22,3 +22,6 @@ report-desk-video/.hyperframes/
 report-desk-video/renders/
 report-desk-video/snapshots/
 report-desk-video/capture/assets/
+
+# Report Desk workspace (client data, reports, secrets)
+report_desk_data/

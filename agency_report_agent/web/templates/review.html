@@ -1,104 +1,138 @@
 {% extends "base.html" %}
-{% block title %}Review {{ client.name }} — Report Desk{% endblock %}
-
+{% block title %}Review · {{ client.name }}{% endblock %}
 {% block content %}
-<a class="backlink" href="/">← All clients</a>
-
+<a class="backlink" href="/clients/{{ client.id }}/{{ period }}">← {{ client.name }} · {{ period_label(period) }}</a>
 <div class="page-head">
   <div>
-    <h1>{{ client.name }}</h1>
-    <p class="sub">{{ client.period }} · drafted and fact-checked, waiting on you</p>
+    <h1>Review: {{ client.name }}</h1>
+    <p class="sub">{{ period_label(period) }} · drafted by {{ 'Claude' if v.draft_info.writer == 'claude' else 'the template writer' }}{% if v.draft_info.edited_by %}, edited by {{ v.draft_info.edited_by }}{% endif %}</p>
+  </div>
+  <div class="actions">
+    <span class="pill {{ st.status }}"><span class="dot"></span>{{ st.status_label }}</span>
+    <a class="btn btn-ghost" href="/clients/{{ client.id }}/{{ period }}/preview" target="_blank" rel="noopener">Preview as client</a>
   </div>
 </div>
 
+{% if v.draft_info.fallback_reason %}<div class="flash warn">Claude wasn't used for this draft: {{ v.draft_info.fallback_reason }}</div>{% endif %}
+
+{% if ver.issues %}
+<div class="callout crit" id="issues">
+  <h3>{{ ver.issues|length }} statement{{ '' if ver.issues|length == 1 else 's' }} the fact checker couldn't back</h3>
+  <ul>{% for i in ver.issues %}<li><b>“{{ i.quote }}”</b> — {{ i.message }}</li>{% endfor %}</ul>
+  <p class="small">Fix them in the text below, or if you've checked a figure yourself, confirm it when approving. Confirmations are recorded in the activity log.</p>
+</div>
+{% endif %}
+{% if v.warnings %}<div class="callout"><h3>About the data</h3><ul>{% for w in v.warnings %}<li>{{ w }}</li>{% endfor %}</ul></div>{% endif %}
+
 <div class="review-grid">
-  <div>
-    <div class="card">
-      <div class="card-head">
-        <h2>Draft summary</h2>
-        <span class="pill approved"><span class="dot"></span>{{ info.figures_checked }} figures verified</span>
-      </div>
-      <div class="card-body">
-        <div class="draft">
-          {% for para in draft_paragraphs %}<p>{{ para }}</p>{% endfor %}
-        </div>
+<div class="stack-lg">
+  <section class="card">
+    <div class="card-head"><h2>Draft</h2>
+      <span class="legend small"><mark class="claim ok">checked</mark> <mark class="claim bad">needs attention</mark> <mark class="claim future">future, not checked</mark></span></div>
+    <div class="card-body draft-view">{{ draft_html }}</div>
+    <details class="editbox">
+      <summary class="card-body"><span class="btn btn-ghost">Edit the text</span></summary>
+      <form method="post" action="/clients/{{ client.id }}/{{ period }}/review" class="card-body">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="action" value="edit">
+        <input type="hidden" name="reviewer" value="{{ user }}">
+        <label class="field"><span class="field-label">Draft (## headings, - bullets, **bold**; keep the [F12] references after figures)</span>
+          <textarea name="text" rows="22" class="mono" spellcheck="true">{{ v.draft }}</textarea></label>
+        <button class="btn btn-primary" type="submit">Save and re-check</button>
+      </form>
+    </details>
+  </section>
 
-        {% if info.anomalies %}
-          <div class="callout">
-            <h3>Only you can explain these</h3>
-            <ul>
-              {% for a in info.anomalies %}<li>{{ a }}</li>{% endfor %}
-            </ul>
-          </div>
-        {% endif %}
-      </div>
-    </div>
+  <section class="card">
+    <div class="card-head"><h2>Approve</h2></div>
+    <form method="post" action="/clients/{{ client.id }}/{{ period }}/review" class="card-body">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="action" value="approve">
+      <label class="field"><span class="field-label">Reviewed by</span>
+        <select name="reviewer" required>
+          {% if user not in reviewers %}<option value="{{ user }}">{{ user }}</option>{% endif %}
+          {% for r in reviewers %}<option value="{{ r }}" {% if r == user %}selected{% endif %}>{{ r }}</option>{% endfor %}
+        </select></label>
+      <label class="field"><span class="field-label">Note for the file (optional)</span>
+        <input type="text" name="comment" maxlength="1000"></label>
+      {% if ver.issues %}
+      <label class="check"><input type="checkbox" name="confirm_flagged" value="1" required>
+        I've checked the {{ ver.issues|length }} flagged figure{{ '' if ver.issues|length == 1 else 's' }} myself and they're correct.</label>
+      {% endif %}
+      <button class="btn btn-primary" type="submit">Approve and create the report</button>
+    </form>
+  </section>
 
-    <div class="card" style="margin-top:20px">
-      <div class="card-head"><h2>Your decision</h2></div>
-      <div class="card-body">
-        <form method="post" action="/review/{{ client.id }}">
-          <label class="field">
-            <span class="field-label">Reviewer</span>
-            <select name="reviewer">
-              {% for r in agency.reviewers %}<option value="{{ r }}">{{ r }}</option>{% endfor %}
-            </select>
-          </label>
-          <label class="field">
-            <span class="field-label">Add a note to the client (optional)</span>
-            <textarea name="note" placeholder="e.g. The jump in social traffic came from our TikTok collaboration with Dr. Shah."></textarea>
-          </label>
-          <div class="decide">
-            <button class="btn btn-primary" name="decision" value="approved" type="submit">Approve &amp; generate report</button>
-            <button class="btn btn-danger" name="decision" value="rejected" type="submit">Send back for changes</button>
-          </div>
-        </form>
+  <section class="card">
+    <div class="card-head"><h2>Notes that go into the report</h2></div>
+    <form method="post" action="/clients/{{ client.id }}/{{ period }}/review" class="card-body">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="action" value="update_notes">
+      <input type="hidden" name="reviewer" value="{{ user }}">
+      {% for a in anomalies %}
+      <div class="anomaly {{ a.severity }}">
+        <p><b>{{ 'Important' if a.severity == 'important' else 'Worth a look' }}:</b> {{ a.text|strip_cites }}</p>
+        <label class="field"><span class="field-label">Explanation for the client (optional)</span>
+          <textarea name="expl_{{ a.id }}" rows="2" maxlength="600" placeholder="{% if client.context %}e.g. {{ client.context }}{% else %}What caused this?{% endif %}">{{ a.explanation }}</textarea></label>
       </div>
-    </div>
-  </div>
+      {% else %}<p class="muted">No unusual movements this month.</p>{% endfor %}
+      <label class="field"><span class="field-label">Next month (optional)</span>
+        <textarea name="next_steps" rows="3" maxlength="3000" placeholder="What you're planning for next month">{{ v.next_steps or '' }}</textarea></label>
+      <button class="btn btn-ghost" type="submit" {% if v.draft_info.edited_by %}data-confirm="This redrafts the report and replaces your text edits. Continue?"{% endif %}>Add to the report and redraft</button>
+    </form>
+  </section>
 
-  <aside>
-    <div class="card">
-      <div class="card-head"><h2>Fact-check trail</h2></div>
-      <div class="card-body">
-        <ul class="trail">
-          {% for step in info.state.verify_history %}
-            <li class="{{ 'fail' if step.issues else 'pass' }}">
-              <div class="t-title">
-                Draft {{ step.attempt }} — {{ step.checked }} figures checked
-              </div>
-              {% if step.issues %}
-                <div class="t-detail">
-                  {{ step.issues|length }} did not match the source data, so the agent rewrote it.
-                </div>
-              {% else %}
-                <div class="t-detail">Every figure matched the source data.</div>
-              {% endif %}
-            </li>
-          {% endfor %}
-        </ul>
-      </div>
-    </div>
+  {% if can_request %}
+  <section class="card">
+    <div class="card-head"><h2>Ask Claude for changes</h2></div>
+    <form method="post" action="/clients/{{ client.id }}/{{ period }}/review" class="card-body">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="action" value="request_changes">
+      <input type="hidden" name="reviewer" value="{{ user }}">
+      <label class="field"><span class="field-label">What should change?</span>
+        <textarea name="change_request" rows="3" maxlength="3000" required placeholder="e.g. Shorter summary, and lead with the drop in paid social"></textarea></label>
+      <button class="btn btn-ghost" type="submit">Redraft</button>
+    </form>
+  </section>
+  {% endif %}
 
-    <div class="card" style="margin-top:20px">
-      <div class="card-head"><h2>This period</h2></div>
-      <div class="card-body">
-        {% for row in summary_rows %}
-          <div class="stat-line"><span>{{ row.0 }}</span><span>{{ row.1 }}</span></div>
-        {% endfor %}
-      </div>
-    </div>
+  <details class="card disclosure">
+    <summary class="card-head"><h2>Don't send this month</h2></summary>
+    <form method="post" action="/clients/{{ client.id }}/{{ period }}/review" class="card-body">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="action" value="reject">
+      <input type="hidden" name="reviewer" value="{{ user }}">
+      <label class="field"><span class="field-label">Reason</span><input type="text" name="reason" maxlength="500" required></label>
+      <button class="btn btn-danger" type="submit">Mark as not sending</button>
+    </form>
+  </details>
+</div>
 
-    <div class="card" style="margin-top:20px">
-      <div class="card-head"><h2>What the agent did</h2></div>
-      <div class="card-body">
-        <ol class="loglist">
-          {% for line in info.state.log %}
-            <li><span class="n">{{ loop.index }}</span><span>{{ line }}</span></li>
-          {% endfor %}
-        </ol>
-      </div>
-    </div>
-  </aside>
+<aside class="stack-lg">
+  <section class="card"><div class="card-head"><h2>Fact check</h2></div>
+    <div class="card-body">
+      <div class="stat-line"><span>Figures checked</span><span>{{ ver.checked }}</span></div>
+      <div class="stat-line"><span>Backed by the data</span><span>{{ ver.claims|selectattr('status', 'equalto', 'verified')|list|length }}</span></div>
+      <div class="stat-line"><span>Need attention</span><span>{{ ver.issues|length }}</span></div>
+      <div class="stat-line"><span>Not checked (future / not data)</span><span>{{ ver.claims|selectattr('status', 'in', ['forward_looking', 'unchecked'])|list|length }}</span></div>
+    </div></section>
+  {% if v.history %}
+  <section class="card"><div class="card-head"><h2>Draft history</h2></div>
+    <div class="card-body"><ol class="trail">
+      {% for h in v.history %}<li class="{{ 'pass' if h.issues == 0 else 'fail' }}">
+        <div class="t-title">{{ 'Your edit' if h.attempt == 'edit' else 'Draft ' ~ h.attempt }}{% if h.writer and h.attempt != 'edit' %} · {{ 'Claude' if h.writer == 'claude' else 'template' }}{% endif %}</div>
+        <div class="t-detail">{{ h.checked }} figures, {{ h.issues }} problem{{ '' if h.issues == 1 else 's' }}{% if h.examples %}: {{ h.examples[0] }}{% endif %}</div></li>{% endfor %}
+    </ol></div></section>
+  {% endif %}
+  {% if v.notes %}<div class="callout"><h3>Sources disagree</h3><ul>{% for n in v.notes %}<li>{{ n }}</li>{% endfor %}</ul></div>{% endif %}
+  <details class="card disclosure"><summary class="card-head"><h2>Fact sheet</h2><span class="muted small">{{ sheet.facts|length }} figures</span></summary>
+    <div class="card-body facts">
+      {% for group, facts in fact_groups %}<h3 class="h3">{{ group }}</h3><dl>
+        {% for f, shown in facts %}<div class="fact" id="{{ f.id }}"><dt>{{ f.label }}</dt><dd><span class="num">{{ shown }}</span> <span class="fid">{{ f.id }}</span></dd></div>{% endfor %}
+      </dl>{% endfor %}
+    </div></details>
+  <section class="card"><div class="card-head"><h2>Run log</h2></div>
+    <div class="card-body"><ol class="loglist">{% for line in v.log %}<li><span class="n">{{ loop.index }}</span><span>{{ line }}</span></li>{% endfor %}</ol></div></section>
+</aside>
 </div>
 {% endblock %}

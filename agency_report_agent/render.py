@@ -328,7 +328,18 @@ def _chromium_path() -> Optional[str]:
 
 
 def html_to_pdf(page_html: str) -> tuple[Optional[bytes], str]:
-    """Print the report to PDF with headless Chromium. Returns (pdf, error)."""
+    """Print the report to PDF with headless Chromium. Returns (pdf, error).
+
+    Runs on its own thread: Playwright's sync API can't run inside an asyncio loop,
+    and the web server may call this from one.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=1) as ex:
+        return ex.submit(_html_to_pdf, page_html).result()
+
+
+def _html_to_pdf(page_html: str) -> tuple[Optional[bytes], str]:
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:

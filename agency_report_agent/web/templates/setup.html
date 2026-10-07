@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Get started{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Welcome to Report Desk</h1>
+<p class="sub">Upload each client's monthly exports; Report Desk drafts the report, checks every figure against the data, and waits for your approval.</p></div></div>
+<div class="grid-2">
+  <div class="card"><div class="card-body">
+    <h2 class="h2">Start with your own clients</h2>
+    <p>Set your agency's name, colour and logo, then add your first client and upload last month's GA4 export.</p>
+    <div class="actions"><a class="btn btn-ghost" href="/settings">Agency settings</a><a class="btn btn-primary" href="/clients">Add a client</a></div>
+  </div></div>
+  <div class="card"><div class="card-body">
+    <h2 class="h2">Or explore a demo agency</h2>
+    <p>Northstar Digital: 12 clients with three months of GA4, Google Ads, Search Console and Meta exports in their real download formats.</p>
+    <form method="post" action="/setup/demo"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="btn btn-primary" type="submit">Load the demo agency</button></form>
+  </div></div>
+</div>
+{% endblock %}

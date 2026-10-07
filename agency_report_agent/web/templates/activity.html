@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Activity{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Activity</h1><p class="sub">Every upload, draft, edit, approval and confirmation, newest first.{% if client %} Showing {{ client }} only · <a href="/activity">show all</a>{% endif %}</p></div></div>
+<div class="card"><div class="table-scroll"><table class="rows compact">
+  <thead><tr><th scope="col">When (UTC)</th><th scope="col">Who</th><th scope="col">What</th><th scope="col">Client</th><th scope="col">Month</th><th scope="col">Detail</th></tr></thead>
+  <tbody>{% for e in entries %}<tr><td class="num">{{ e.at|when }}</td><td>{{ e.actor }}</td><td>{{ e.action }}</td>
+    <td>{% if e.client %}<a href="/activity?client={{ e.client }}">{{ e.client }}</a>{% endif %}</td><td>{{ e.period }}</td><td class="detail">{{ e.detail }}</td></tr>
+  {% else %}<tr><td colspan="6"><p class="muted">Nothing yet.</p></td></tr>{% endfor %}</tbody>
+</table></div></div>
+{% endblock %}
