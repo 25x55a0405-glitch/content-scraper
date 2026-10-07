@@ -1,240 +1,348 @@
-"""Build the finished, branded report the agency sends to its client.
+"""The finished report: one self-contained, branded HTML file (and a PDF of it).
 
-Deliberate design decision: the table of figures is built straight from the
-source data and never from the AI's text. So even if the written commentary is
-imperfect, the numbers a client reads are always exactly right.
+The tiles and the channel table are drawn straight from the fact sheet, never
+from the written narrative, so the numbers a client sees in them are exactly
+the data. The narrative is the reviewed draft with fact IDs removed.
 
-The report carries the agency's own brand colour and name — the tool stays
-invisible, which is what lets an agency put this in front of its clients.
+The report carries the agency's name, logo and colour — the tool itself stays
+invisible.
 """
 
 from __future__ import annotations
 
+import base64
+import glob
 import html
-from typing import Any
+import os
+import re
+from datetime import datetime
+from typing import Optional
 
-from .metrics import summarise_channels, totals
+from .anomalies import Anomaly
+from .facts import Fact, FactSheet, singular
+from .model import METRICS, TOTAL, channel_label, period_label
+from .store import SOURCE_NAMES, Store
+from .verify import Verification
+
+esc = html.escape
+_CITE = re.compile(r"\s?\[\s*F\d+(?:\s*[,;/]\s*F?\d+)*\s*\]")
 
 
-def _change_cell(value: float | None) -> str:
-    if value is None:
-        return '<td class="num muted">—</td>'
-    direction = "up" if value > 0 else "down" if value < 0 else "flat"
-    arrow = "▲" if value > 0 else "▼" if value < 0 else "–"
-    return f'<td class="num {direction}">{arrow} {abs(value):.1f}%</td>'
+# --------------------------------------------------------------------------- #
+# Markdown (the small subset drafts use) → safe HTML
+# --------------------------------------------------------------------------- #
+def strip_citations(text: str) -> str:
+    return _CITE.sub("", text)
 
 
-def render_client_report(state: dict[str, Any]) -> str:
-    data = state["data"]
-    agency = state.get("agency", {})
-    rows = summarise_channels(data)
-    t = totals(data)
+def _inline(s: str) -> str:
+    s = esc(s)
+    s = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", s)
+    s = re.sub(r"(?<![\w*])\*(?!\s)(.+?)(?<!\s)\*(?![\w*])", r"<em>\1</em>", s)
+    return s
 
-    brand = agency.get("brand_color", "#1B4D3E")
-    agency_name = agency.get("name", "Your Agency")
-    currency = data.get("currency", "")
 
-    esc = html.escape
-    commentary = "".join(
-        f"<p>{esc(p.strip())}</p>" for p in (state.get("draft") or "").split("\n\n") if p.strip()
-    )
+def md_to_html(text: str, keep_citations: bool = False) -> str:
+    if not keep_citations:
+        text = strip_citations(text)
+    out: list[str] = []
+    para: list[str] = []
+    items: list[str] = []
 
-    table_rows = []
-    for r in rows:
-        spend = f"{currency}{r['spend']}" if r.get("spend") else "—"
-        table_rows.append(
-            f"<tr><th scope='row'>{esc(r['channel'])}</th>"
-            f"<td class='num'>{r['sessions']:,}</td>{_change_cell(r['sessions_change'])}"
-            f"<td class='num'>{r['conversions']:,}</td>{_change_cell(r['conversions_change'])}"
-            f"<td class='num muted'>{spend}</td></tr>"
-        )
-    table_rows.append(
-        f"<tr class='total'><th scope='row'>All channels</th>"
-        f"<td class='num'>{t['total_sessions']:,}</td>{_change_cell(t['total_sessions_change'])}"
-        f"<td class='num'>{t['total_conversions']:,}</td>"
-        f"{_change_cell(t['total_conversions_change'])}<td class='num muted'></td></tr>"
-    )
+    def flush():
+        if para:
+            out.append(f"<p>{_inline(' '.join(para))}</p>")
+            para.clear()
+        if items:
+            out.append("<ul>" + "".join(f"<li>{_inline(i)}</li>" for i in items) + "</ul>")
+            items.clear()
 
-    target = t.get("leads_target")
-    progress = ""
-    if target:
-        pct = min(round(t["total_conversions"] / target * 100), 100)
-        on_track = t["total_conversions"] >= target
-        progress = f"""
-        <section class="goal">
-          <div class="goal-head">
-            <span class="goal-label">Monthly enquiry target</span>
-            <span class="goal-value">{t['total_conversions']:,} of {target:,}
-              <span class="{'hit' if on_track else 'near'}">{'Target met' if on_track else f'{pct}%'}</span>
-            </span>
-          </div>
-          <div class="bar"><div class="fill" style="width:{pct}%"></div></div>
-        </section>"""
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line:
+            flush()
+            continue
+        m = re.match(r"^(#{1,6})\s+(.*)$", line)
+        if m:
+            flush()
+            level = min(max(len(m.group(1)), 2), 3)
+            out.append(f"<h{level}>{_inline(m.group(2))}</h{level}>")
+            continue
+        m = re.match(r"^(?:[-*+•]|\d{1,2}[.)])\s+(.*)$", line)
+        if m:
+            if para:
+                flush()
+            items.append(m.group(1))
+            continue
+        if items:
+            items[-1] += " " + line
+        else:
+            para.append(line)
+    flush()
+    return "\n".join(out)
 
-    flagged = ""
-    if state.get("anomalies"):
-        items = "".join(f"<li>{esc(a)}</li>" for a in state["anomalies"])
-        flagged = f"""
-        <section class="flagged">
-          <h2>Worth a closer look</h2>
-          <ul>{items}</ul>
-        </section>"""
 
-    note = ""
-    if state.get("approval_note"):
-        note = f"""
-        <section class="note">
-          <h2>From your account team</h2>
-          <p>{esc(state['approval_note'])}</p>
-        </section>"""
+# --------------------------------------------------------------------------- #
+# Pieces
+# --------------------------------------------------------------------------- #
+def _fmt(sheet: FactSheet, f: Optional[Fact]) -> str:
+    return sheet.fmt(f).lstrip("+−±") if f else "—"
 
-    checked = state.get("figures_checked", 0)
-    reviewer = state.get("reviewer") or "your account team"
 
+def _change(sheet: FactSheet, scope: str, metric: str) -> str:
+    """A small change badge, coloured by whether the move is good for the client."""
+    cur = sheet.find(scope, metric, "value", "current")
+    prev = sheet.find(scope, metric, "value", "previous")
+    if not cur or not prev:
+        return '<span class="chg none">—</span>'
+    hib = METRICS[metric].higher_is_better
+    neutral = metric == "spend"          # more spend is a decision, not good or bad news
+    unit = METRICS[metric].unit
+    if unit == "count" and (prev.value < 10 or cur.value < 10):
+        d = cur.value - prev.value
+        cls = "flat" if d == 0 or neutral else ("good" if (d > 0) == hib else "bad")
+        sign = "+" if d > 0 else ("−" if d < 0 else "±")
+        return f'<span class="chg {cls}" title="{esc(_fmt(sheet, prev))} last month">{sign}{abs(d):,.0f}</span>'
+    ch = sheet.find(scope, metric, "change", "current", "mom")
+    if not ch:
+        return '<span class="chg none">—</span>'
+    if ch.direction == "flat":
+        cls, arrow = "flat", "→"
+    else:
+        cls = "flat" if neutral else ("good" if (ch.value > 0) == hib else "bad")
+        arrow = "▲" if ch.value > 0 else "▼"
+    return (f'<span class="chg {cls}" title="{esc(_fmt(sheet, prev))} last month">{arrow} '
+            f'{abs(ch.value):.1f}%</span>')
+
+
+def _tile(sheet: FactSheet, label: str, metric: str, note: str = "") -> str:
+    f = sheet.find(TOTAL, metric, "value", "current")
+    if not f:
+        return ""
+    return (f'<div class="tile"><div class="tile-label">{esc(label)}</div>'
+            f'<div class="tile-value">{esc(_fmt(sheet, f))}</div>'
+            f'<div class="tile-foot">{_change(sheet, TOTAL, metric)}'
+            f'{f"<span class=tile-note>{esc(note)}</span>" if note else ""}</div></div>')
+
+
+def _target(sheet: FactSheet) -> str:
+    prog = next((f for f in sheet.facts if f.kind == "target" and f.target_kind == "progress"), None)
+    tgt = next((f for f in sheet.facts if f.kind == "target" and f.target_kind == "value"), None)
+    gap = next((f for f in sheet.facts if f.kind == "target" and f.target_kind == "gap"), None)
+    if not (prog and tgt and gap):
+        return ""
+    width = max(0.0, min(prog.value, 100.0))
+    state = "hit" if prog.value >= 100 else ("near" if prog.value >= 80 else "miss")
+    label = sheet.conversion_label
+    words = (f"{gap.value:,.0f} ahead of target" if gap.value > 0 else
+             "exactly on target" if gap.value == 0 else f"{abs(gap.value):,.0f} short of target")
+    return (f'<div class="target {state}"><div class="target-head"><span>Monthly target: '
+            f'{esc(_fmt(sheet, tgt))} {esc(label)}</span><strong>{prog.value:.0f}% · {esc(words)}</strong></div>'
+            f'<div class="meter" role="img" aria-label="{prog.value:.0f}% of target">'
+            f'<div class="meter-fill" style="width:{width:.1f}%"></div></div></div>')
+
+
+def _table(sheet: FactSheet) -> str:
+    channels = [s for s in dict.fromkeys(f.scope for f in sheet.facts) if s != TOTAL]
+    has_spend = any(f.metric == "spend" and f.kind == "value" and f.value > 0 for f in sheet.facts)
+    has_rev = any(f.metric == "revenue" and f.kind == "value" and f.value > 0 for f in sheet.facts)
+    label = sheet.conversion_label
+    head = ["Channel", "Sessions", label.capitalize(), "Conv. rate"]
+    if has_spend:
+        head += ["Spend", f"Cost per {singular(label)}"]
+    if has_rev:
+        head += ["Revenue"]
+
+    def row(scope: str, cls: str = "") -> str:
+        v = lambda m: sheet.find(scope, m, "value", "current")  # noqa: E731
+        cells = [f'<th scope="row">{esc(channel_label(scope))}</th>',
+                 f'<td class="num">{esc(_fmt(sheet, v("sessions")))}'
+                 f'{"<br>" + _change(sheet, scope, "sessions") if v("sessions") else ""}</td>',
+                 f'<td class="num">{esc(_fmt(sheet, v("conversions")))}'
+                 f'{"<br>" + _change(sheet, scope, "conversions") if v("conversions") else ""}</td>',
+                 f'<td class="num">{esc(_fmt(sheet, v("conv_rate")))}</td>']
+        if has_spend:
+            sp = v("spend")
+            cells += [f'<td class="num">{esc(_fmt(sheet, sp)) if sp and sp.value else "—"}</td>',
+                      f'<td class="num">{esc(_fmt(sheet, v("cpa")))}</td>']
+        if has_rev:
+            rv = v("revenue")
+            cells += [f'<td class="num">{esc(_fmt(sheet, rv)) if rv and rv.value else "—"}</td>']
+        return f'<tr class="{cls}">' + "".join(cells) + "</tr>"
+
+    body = "".join(row(c) for c in channels)
+    if any(f.scope == TOTAL for f in sheet.facts):
+        body += row(TOTAL, "total")
+    ths = "".join(f'<th scope="col" class="{"num" if i else ""}">{esc(h)}</th>' for i, h in enumerate(head))
+    return f'<table class="channels"><thead><tr>{ths}</tr></thead><tbody>{body}</tbody></table>'
+
+
+def _logo(store: Store) -> str:
+    data, mime = store.logo_bytes()
+    if not data:
+        return ""
+    return f'<img class="logo" alt="" src="data:{mime};base64,{base64.b64encode(data).decode()}">'
+
+
+def _date(iso: str) -> str:
+    try:
+        d = datetime.strptime(iso[:10], "%Y-%m-%d")
+        return f"{d.day} {d:%B %Y}"
+    except ValueError:
+        return iso
+
+
+def _safe_color(c: str) -> str:
+    return c if re.fullmatch(r"#[0-9a-fA-F]{6}", c or "") else "#1B4D3E"
+
+
+# --------------------------------------------------------------------------- #
+# The report
+# --------------------------------------------------------------------------- #
+def render_report(store: Store, client: dict, sheet: FactSheet, draft: str, anomalies: list[Anomaly],
+                  notes: Optional[list[str]] = None, reviewer: str = "", approved_at: str = "",
+                  verification: Optional[Verification] = None, preview: bool = False,
+                  show_notes: bool = False) -> str:
+    agency = store.agency()
+    brand = _safe_color(agency.get("brand_color", ""))
+    month = period_label(sheet.period)
+    label = sheet.conversion_label
+    tiles = [_tile(sheet, label.capitalize(), "conversions"),
+             _tile(sheet, "Website sessions", "sessions")]
+    if sheet.find(TOTAL, "revenue") and sheet.find(TOTAL, "revenue").value > 0:
+        tiles.append(_tile(sheet, "Revenue", "revenue"))
+    if sheet.find(TOTAL, "spend") and sheet.find(TOTAL, "spend").value > 0:
+        tiles.append(_tile(sheet, "Ad spend", "spend"))
+        tiles.append(_tile(sheet, f"Cost per {singular(label)}", "cpa"))
+    tiles_html = "".join(t for t in tiles if t)[:]
+    sources = store.sources(client["id"], sheet.period) if client.get("id") else []
+    src_names = ", ".join(sorted({SOURCE_NAMES.get(s["type"], s["type"]) for s in sources})) or "—"
+    comp = f"Changes are compared with {period_label(sheet.previous_period)}." if sheet.previous_period else \
+        "No earlier month is available, so there are no comparisons."
+    checked = (f"Every figure in this report was checked against the source data before approval."
+               if verification is not None and verification.ok else
+               "Figures were checked against the source data and confirmed by the reviewer before approval."
+               if verification is not None else "")
+    approval = (f"Reviewed and approved by {esc(reviewer)} on {esc(_date(approved_at))}." if reviewer and approved_at
+                else "Draft — not yet approved." if preview else "")
+    note_items = "".join(f"<li>{esc(n)}</li>" for n in (notes or []))
+    title = f"{client.get('name', '')} — {month} performance report"
     return f"""<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{esc(data.get('client_name',''))} — {esc(str(data.get('period','')))}</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<title>{esc(title)}</title>
 <style>
-  :root {{
-    --brand: {brand};
-    --ink: #15181D;
-    --muted: #6A7280;
-    --rule: #E3E6EA;
-    --paper: #FFFFFF;
-    --ground: #F4F5F3;
-    --up: #137A50;
-    --down: #B4452F;
-    --warn-bg: #FDF6E8;
-    --warn-line: #D79A28;
-    --display: "Archivo", system-ui, sans-serif;
-    --body: "Public Sans", system-ui, sans-serif;
-    --mono: "IBM Plex Mono", ui-monospace, monospace;
-  }}
-  * {{ box-sizing: border-box; }}
-  body {{
-    margin: 0; background: var(--ground); color: var(--ink);
-    font-family: var(--body); font-size: 16px; line-height: 1.65;
-    -webkit-font-smoothing: antialiased;
-  }}
-  .sheet {{
-    max-width: 820px; margin: 0 auto; background: var(--paper);
-    padding: 56px 56px 44px;
-  }}
-  @media (max-width: 640px) {{ .sheet {{ padding: 32px 20px; }} }}
-
-  header {{ border-bottom: 3px solid var(--brand); padding-bottom: 24px; }}
-  .agency {{
-    font-family: var(--mono); font-size: 12px; letter-spacing: .14em;
-    text-transform: uppercase; color: var(--brand); font-weight: 500;
-  }}
-  h1 {{
-    font-family: var(--display); font-weight: 700; letter-spacing: -.025em;
-    font-size: clamp(2rem, 5vw, 2.75rem); margin: 10px 0 6px; line-height: 1.08;
-  }}
-  .period {{ color: var(--muted); font-size: 15px; margin: 0; }}
-
-  h2 {{
-    font-family: var(--display); font-size: 13px; font-weight: 600;
-    letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
-    margin: 40px 0 14px;
-  }}
-  p {{ margin: 0 0 14px; max-width: 62ch; }}
-
-  .goal {{ margin-top: 36px; }}
-  .goal-head {{ display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }}
-  .goal-label {{
-    font-family: var(--mono); font-size: 11px; letter-spacing: .12em;
-    text-transform: uppercase; color: var(--muted);
-  }}
-  .goal-value {{ font-family: var(--display); font-weight: 600; font-variant-numeric: tabular-nums; }}
-  .goal-value .hit {{ color: var(--up); font-size: 13px; margin-left: 8px; }}
-  .goal-value .near {{ color: var(--muted); font-size: 13px; margin-left: 8px; }}
-  .bar {{ height: 8px; border-radius: 99px; background: var(--rule); margin-top: 10px; overflow: hidden; }}
-  .fill {{ height: 100%; background: var(--brand); border-radius: 99px; }}
-
-  .table-wrap {{ overflow-x: auto; }}
-  table {{ width: 100%; border-collapse: collapse; margin-top: 4px; font-size: 15px; min-width: 560px; }}
-  table th:first-child, table td:first-child {{ padding-right: 12px; }}
-  table th + th, table td + td {{ padding-left: 14px; }}
-  thead th {{
-    font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em;
-    text-transform: uppercase; color: var(--muted); font-weight: 500;
-    text-align: right; padding: 0 0 10px; border-bottom: 1px solid var(--rule);
-  }}
-  thead th:first-child {{ text-align: left; }}
-  tbody th {{ text-align: left; font-weight: 500; padding: 13px 0; }}
-  td {{ padding: 13px 0; border-bottom: 1px solid var(--rule); }}
-  tbody th {{ border-bottom: 1px solid var(--rule); }}
-  .num {{ text-align: right; font-variant-numeric: tabular-nums; font-family: var(--mono); font-size: 13px; white-space: nowrap; }}
-  .up {{ color: var(--up); }} .down {{ color: var(--down); }}
-  .muted {{ color: var(--muted); }}
-  tr.total th, tr.total td {{ font-weight: 600; border-bottom: none; padding-top: 16px; }}
-  tr.total .num {{ font-size: 15px; }}
-
-  .flagged {{
-    margin-top: 36px; background: var(--warn-bg);
-    border-left: 3px solid var(--warn-line); padding: 18px 22px; border-radius: 0 6px 6px 0;
-  }}
-  .flagged h2 {{ margin-top: 0; color: #8A6314; }}
-  .flagged ul {{ margin: 0; padding-left: 18px; }}
-  .flagged li {{ margin-bottom: 6px; }}
-
-  .note {{ margin-top: 36px; border-left: 3px solid var(--brand); padding: 4px 22px; }}
-  .note h2 {{ margin-top: 0; }}
-
-  footer {{
-    margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--rule);
-    display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap;
-    font-size: 12.5px; color: var(--muted);
-  }}
-  .verified {{ display: inline-flex; align-items: center; gap: 7px; color: var(--up); font-weight: 500; }}
-  .tick {{
-    width: 15px; height: 15px; border-radius: 50%; background: var(--up); color: #fff;
-    display: inline-grid; place-items: center; font-size: 9px; line-height: 1;
-  }}
-  @media print {{
-    body {{ background: #fff; }}
-    .sheet {{ max-width: none; padding: 0; }}
-  }}
+:root {{ --brand: {brand}; --ink: #16181d; --muted: #5d6470; --line: #e3e5e8; --soft: #f5f6f7;
+        --good: #136b3f; --bad: #a3261b; --flat: #5d6470; color-scheme: light; }}
+* {{ box-sizing: border-box; }}
+html {{ -webkit-text-size-adjust: 100%; }}
+body {{ margin: 0; background: #fff; color: var(--ink);
+       font: 15px/1.6 "Inter", "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif; }}
+.page {{ max-width: 860px; margin: 0 auto; padding: 40px 32px 56px; }}
+header.top {{ display: flex; justify-content: space-between; align-items: center; gap: 16px;
+             padding-bottom: 18px; border-bottom: 3px solid var(--brand); }}
+.agency {{ display: flex; align-items: center; gap: 12px; font-weight: 600; letter-spacing: .01em; }}
+.logo {{ max-height: 40px; max-width: 160px; }}
+.period {{ color: var(--muted); font-size: 13px; text-align: right; }}
+h1 {{ font-size: 30px; line-height: 1.2; margin: 28px 0 4px; letter-spacing: -.01em; }}
+.sub {{ color: var(--muted); margin: 0 0 24px; }}
+.tiles {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 12px; margin: 8px 0 18px; }}
+.tile {{ border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; background: #fff; }}
+.tile-label {{ font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }}
+.tile-value {{ font-size: 24px; font-weight: 650; margin-top: 4px; font-variant-numeric: tabular-nums; }}
+.tile-foot {{ margin-top: 4px; font-size: 13px; }}
+.chg {{ font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }}
+.chg.good {{ color: var(--good); }} .chg.bad {{ color: var(--bad); }} .chg.flat, .chg.none {{ color: var(--flat); }}
+.target {{ border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-bottom: 28px; }}
+.target-head {{ display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 14px; }}
+.meter {{ height: 10px; background: var(--soft); border-radius: 99px; margin-top: 10px; overflow: hidden; }}
+.meter-fill {{ height: 100%; background: var(--brand); border-radius: 99px; }}
+.target.miss .meter-fill {{ background: #b7791f; }}
+.narrative h2 {{ font-size: 19px; margin: 30px 0 8px; padding-top: 6px; color: var(--brand); }}
+.narrative h3 {{ font-size: 16px; margin: 20px 0 6px; }}
+.narrative p {{ margin: 0 0 12px; }}
+.narrative ul {{ margin: 0 0 12px; padding-left: 20px; }}
+.narrative li {{ margin: 0 0 8px; }}
+h2.section {{ font-size: 19px; margin: 34px 0 10px; color: var(--brand); }}
+.table-wrap {{ overflow-x: auto; }}
+table.channels {{ width: 100%; border-collapse: collapse; font-size: 13.5px; font-variant-numeric: tabular-nums; }}
+.channels th, .channels td {{ padding: 9px 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }}
+.channels td {{ white-space: nowrap; }}
+.channels td .chg {{ font-size: 12px; }}
+.channels thead th {{ font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 600; }}
+.channels .num {{ text-align: right; }}
+.channels tr.total th, .channels tr.total td {{ font-weight: 650; border-top: 2px solid var(--ink); border-bottom: 0; }}
+footer.notes {{ margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12.5px; }}
+footer.notes ul {{ padding-left: 18px; margin: 6px 0; }}
+footer.notes p {{ margin: 4px 0; }}
+@media (max-width: 600px) {{ .page {{ padding: 24px 16px 40px; }} h1 {{ font-size: 24px; }}
+  header.top {{ flex-direction: column; align-items: flex-start; }} .period {{ text-align: left; }} }}
+@media print {{ .page {{ padding: 0; max-width: none; }} .tile, .target, table {{ break-inside: avoid; }}
+  h2 {{ break-after: avoid; }} }}
+@page {{ size: A4; margin: 16mm 14mm; }}
 </style>
 </head>
 <body>
-<div class="sheet">
-  <header>
-    <div class="agency">{esc(agency_name)}</div>
-    <h1>{esc(data.get('client_name',''))}</h1>
-    <p class="period">Performance report · {esc(str(data.get('period','')))}</p>
-  </header>
-
-  <h2>Summary</h2>
-  {commentary}
-
-  {progress}
-
-  <h2>Channel performance</h2>
-  <div class="table-wrap">
-  <table>
-    <thead>
-      <tr><th>Channel</th><th>Sessions</th><th>Change</th><th>Enquiries</th><th>Change</th><th>Spend</th></tr>
-    </thead>
-    <tbody>{''.join(table_rows)}</tbody>
-  </table>
-  </div>
-
-  {flagged}
-  {note}
-
-  <footer>
-    <span class="verified"><span class="tick">✓</span>
-      All {checked} figures checked against source data</span>
-    <span>Reviewed and approved by {esc(reviewer)}</span>
-  </footer>
+<div class="page">
+<header class="top">
+  <div class="agency">{_logo(store)}<span>{esc(agency.get("name", ""))}</span></div>
+  <div class="period">Monthly performance report<br>{esc(month)}</div>
+</header>
+<h1>{esc(client.get("name", ""))}</h1>
+<p class="sub">{esc(month)} · {esc(comp)}</p>
+<section class="tiles" aria-label="Headline figures">{tiles_html}</section>
+{_target(sheet)}
+<article class="narrative">
+{md_to_html(draft)}
+</article>
+<h2 class="section">All channels at a glance</h2>
+<div class="table-wrap">{_table(sheet)}</div>
+<footer class="notes">
+  <p>Data sources: {esc(src_names)}. {esc(comp)}</p>
+  {f"<p>Notes on the data:</p><ul>{note_items}</ul>" if note_items and show_notes else ""}
+  <p>{esc(checked)}</p>
+  <p>Prepared by {esc(agency.get("name", ""))}. {approval}</p>
+</footer>
 </div>
 </body>
-</html>"""
+</html>
+"""
+
+
+# --------------------------------------------------------------------------- #
+# PDF
+# --------------------------------------------------------------------------- #
+def _chromium_path() -> Optional[str]:
+    env = os.environ.get("REPORT_DESK_CHROMIUM")
+    if env and os.path.exists(env):
+        return env
+    base = os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "/opt/pw-browsers")
+    for pattern in ("chromium-*/chrome-linux/chrome", "chromium-*/chrome-linux64/chrome",
+                    "chromium_headless_shell-*/chrome-linux/headless_shell"):
+        hits = sorted(glob.glob(os.path.join(base, pattern)))
+        if hits:
+            return hits[-1]
+    return None
+
+
+def html_to_pdf(page_html: str) -> tuple[Optional[bytes], str]:
+    """Print the report to PDF with headless Chromium. Returns (pdf, error)."""
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        return None, "PDF export needs Playwright installed."
+    try:
+        with sync_playwright() as p:
+            path = _chromium_path()
+            browser = p.chromium.launch(executable_path=path) if path else p.chromium.launch()
+            try:
+                page = browser.new_page()
+                page.set_content(page_html, wait_until="load", timeout=30000)
+                pdf = page.pdf(format="A4", print_background=True, prefer_css_page_size=True)
+            finally:
+                browser.close()
+        return pdf, ""
+    except Exception as e:  # noqa: BLE001 — a PDF failure must never lose the approval
+        return None, f"PDF export failed ({type(e).__name__})."
