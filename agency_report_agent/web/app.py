@@ -13,6 +13,7 @@ Configuration (environment variables):
 from __future__ import annotations
 
 import hmac
+import math
 from contextlib import asynccontextmanager
 import os
 import re
@@ -400,10 +401,12 @@ def create_app(home: Optional[str] = None) -> FastAPI:
             try:
                 v = float(str(raw).replace(",", "").replace("£", "").replace("$", "").replace("€", "").strip())
             except ValueError:
-                flash(request, f"“{raw}” isn't a number ({channel_label(scope)} {METRICS[metric].label}).", "error")
+                flash(request, f"“{str(raw)[:30]}” isn't a number ({channel_label(scope)} {METRICS[metric].label}).",
+                      "error")
                 return back(f"/clients/{cid}/{period}")
-            if v < 0:
-                flash(request, "Figures can't be negative.", "error")
+            if not math.isfinite(v) or v < 0 or v > 1e12:
+                flash(request, f"{channel_label(scope)} {METRICS[metric].label}: enter an ordinary number, "
+                               f"zero or more.", "error")
                 return back(f"/clients/{cid}/{period}")
             values.setdefault(scope, {})[metric] = v
         if not values:
@@ -667,13 +670,21 @@ def _when(iso: Optional[str]) -> str:
         return iso
 
 
+def _fmt_cell(metric: str, v) -> str:
+    if v is None or not isinstance(v, (int, float)) or not math.isfinite(v):
+        return ""
+    if metric in ("spend", "revenue"):
+        return f"{v:,.2f}"
+    return f"{v:,.0f}" if float(v).is_integer() else f"{v:,.2f}"
+
+
 def _channel_rows(pd) -> list[dict]:
     rows = []
     has = {m: any(row.get(m) for row in pd.values.values()) for m in ("spend", "revenue", "clicks")}
     for scope in pd.channels() + ([TOTAL] if TOTAL in pd.values else []):
         row = pd.values.get(scope, {})
         rows.append({"scope": scope, "label": channel_label(scope),
-                     "cells": {m: (row.get(m) if has.get(m, True) else None)
+                     "cells": {m: (_fmt_cell(m, row.get(m)) if has.get(m, True) else "")
                                for m in ("sessions", "conversions", "spend", "revenue", "clicks", "impressions")},
                      "origin": pd.origin.get(scope, {})})
     return rows

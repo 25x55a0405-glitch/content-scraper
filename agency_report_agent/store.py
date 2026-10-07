@@ -16,6 +16,7 @@ requests can't interleave a half-written file.
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import tempfile
@@ -126,14 +127,26 @@ class Store:
     def currency_symbol(self) -> str:
         return CURRENCY_SYMBOLS.get(self.agency().get("currency", "GBP"), "£")
 
-    def save_logo(self, data: bytes, mime: str) -> None:
-        if mime not in ("image/png", "image/jpeg", "image/svg+xml", "image/webp"):
-            raise StoreError("Logo must be PNG, JPEG, SVG or WebP.")
+    def save_logo(self, data: bytes, mime: str = "") -> None:
+        """Save the agency logo. The type is decided from the file's own bytes, never from the upload's label."""
         if len(data) > 1024 * 1024:
             raise StoreError("Logo must be under 1 MB.")
-        if mime == "image/svg+xml" and re.search(rb"<script|on\w+\s*=|javascript:", data, re.I):
-            raise StoreError("That SVG contains scripts, which aren't allowed in a logo.")
-        ext = {"image/png": "png", "image/jpeg": "jpg", "image/svg+xml": "svg", "image/webp": "webp"}[mime]
+        head = data[:16]
+        if head.startswith(b"\x89PNG\r\n\x1a\n"):
+            ext = "png"
+        elif head.startswith(b"\xff\xd8\xff"):
+            ext = "jpg"
+        elif head[:4] == b"RIFF" and data[8:12] == b"WEBP":
+            ext = "webp"
+        elif re.search(rb"<svg[\s>]", data[:4096], re.I):
+            ext = "svg"
+            if re.search(rb"<\s*(script|foreignObject|iframe|embed|object|style\b[^>]*@import)|\bon\w+\s*=|"
+                         rb"javascript:|data:text/html|<!ENTITY|<!DOCTYPE[^>]*\[|(?:xlink:)?href\s*=\s*[\"']\s*(?!#)",
+                         data, re.I):
+                raise StoreError("That SVG contains scripts or external links, which aren't allowed in a logo. "
+                                 "Export a plain SVG, or use a PNG.")
+        else:
+            raise StoreError("That doesn't look like a PNG, JPEG, SVG or WebP image.")
         for old in self.home.glob("logo.*"):
             old.unlink()
         self._write_bytes(self.home / f"logo.{ext}", data)
@@ -217,8 +230,8 @@ class Store:
                     t = float(t)
                 except (TypeError, ValueError):
                     raise StoreError("Monthly target must be a number.")
-                if t < 0:
-                    raise StoreError("Monthly target can't be negative.")
+                if not math.isfinite(t) or t < 0 or t > 1e9:
+                    raise StoreError("Monthly target must be a normal, non-negative number.")
                 out["monthly_target"] = t
         if "archived" in fields:
             out["archived"] = bool(fields["archived"])
@@ -264,7 +277,7 @@ class Store:
         res = ImportResult(source_type="manual")
         for scope, row in values.items():
             for m, v in row.items():
-                if m in METRICS and v is not None:
+                if m in METRICS and v is not None and math.isfinite(float(v)) and 0 <= float(v) <= 1e12:
                     res.put(period, scope, m, float(v))
         for old in self.sources(client_id, period):
             if old["type"] == "manual":

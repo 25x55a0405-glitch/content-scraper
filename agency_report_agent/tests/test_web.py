@@ -267,3 +267,93 @@ def test_review_markup_is_well_formed(signed_in, app):
     assert "data-fact=&#34;" not in view and '&#34;' not in view
     assert view.count("<mark") == view.count("</mark>") > 20
     assert re.search(r'<mark class="claim ok" title="[^"<>]+" data-fact="F\d+">', view)
+
+
+# --------------------------------------------------------------------------- #
+# Hardening: things an independent probe found
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize("bad", ["nan", "inf", "-inf", "1e999", "-5", "1e13"])
+def test_manual_entry_rejects_non_finite_and_absurd(signed_in, app, bad):
+    seed(app)
+    tok = token(signed_in)
+    url = f"/clients/tidewater-yoga/{P}"
+    r = signed_in.post(f"{url}/manual", data={"csrf_token": tok, "v__email__sessions": bad})
+    assert r.status_code == 200 and "ordinary number" in r.text or "isn't a number" in r.text.replace("&#39;", "'")
+    assert signed_in.get(url).status_code == 200                     # the page still renders
+
+
+@pytest.mark.parametrize("target", ["nan", "inf", "1e999", "-1"])
+def test_monthly_target_rejects_non_finite(signed_in, target):
+    tok = token(signed_in)
+    r = signed_in.post("/clients", data={"csrf_token": tok, "name": "Odd Target Ltd", "monthly_target": target})
+    assert "Monthly target" in r.text and "Odd Target" not in signed_in.get("/clients").text
+
+
+@pytest.mark.parametrize("name,data", [
+    ("empty", b""), ("binary", bytes(range(256)) * 50), ("utf16 junk", b"\xff\xfe\x00\x00\x01"),
+    ("nul bytes", b"channel,sessions\n\x00,1\n"), ("huge cell", b"channel,sessions\nEmail," + b"9" * 500000 + b"\n"),
+    ("nan cell", b"channel,sessions\nEmail,nan\n"), ("inf cell", b"channel,sessions\nEmail,inf\n"),
+])
+def test_bad_uploads_never_crash(signed_in, app, name, data):
+    seed(app)
+    tok = token(signed_in)
+    url = f"/clients/kestrel-accounting/{P}"
+    for source in ("ga4", "generic", "google_ads", "meta_ads", "search_console"):
+        r = signed_in.post(f"{url}/upload", data={"csrf_token": tok, "source_type": source},
+                           files={"file": ("a.csv", data, "text/csv")})
+        assert r.status_code == 200, (source, r.status_code)
+    assert signed_in.get(url).status_code == 200
+
+
+def test_zip_bomb_and_oversize_are_refused_quickly(signed_in, app):
+    import io, time, zipfile
+    seed(app)
+    tok = token(signed_in)
+    url = f"/clients/kestrel-accounting/{P}"
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("Dates.csv", "Date,Clicks,Impressions,CTR,Position\n" + "2026-09-01,1,1,1%,1\n" * 3_000_000)
+    t0 = time.time()
+    r = signed_in.post(f"{url}/upload", data={"csrf_token": tok, "source_type": "search_console"},
+                       files={"file": ("bomb.zip", buf.getvalue(), "application/zip")})
+    assert r.status_code == 200 and time.time() - t0 < 30
+    big = b"channel,sessions\n" + b"Email,1\n" * 3_000_000
+    r = signed_in.post(f"{url}/upload", data={"csrf_token": tok, "source_type": "generic"},
+                       files={"file": ("big.csv", big, "text/csv")})
+    assert "15 MB" in r.text
+
+
+def test_logo_must_really_be_an_image(signed_in):
+    tok = token(signed_in)
+    base = {"csrf_token": tok, "name": "A", "brand_color": "#112233", "drafting": "template"}
+    r = signed_in.post("/settings", data=base, files={"logo": ("l.png", b"definitely not a png", "image/png")})
+    assert "doesn't look like a PNG" in r.text.replace("&#39;", "'")
+    r = signed_in.post("/settings", data=base, files={"logo": ("l.svg", b'<svg xmlns="http://www.w3.org/2000/svg">'
+                                                               b'<a xlink:href="javascript:alert(1)"/></svg>', "image/svg+xml")})
+    assert "scripts or external links" in r.text
+    r = signed_in.post("/settings", data=base, files={"logo": ("l.svg", b'<svg xmlns="http://www.w3.org/2000/svg" '
+                                                               b'viewBox="0 0 10 10"><rect width="10" height="10"/></svg>', "text/plain")})
+    assert "Settings saved" in r.text
+
+
+def test_hostile_text_is_escaped_in_the_approved_report(signed_in, app):
+    X = '<img src=x onerror=alert(1)>"><script>alert(2)</script>'
+    tok = token(signed_in)
+    signed_in.post("/settings", data={"csrf_token": tok, "name": X, "brand_color": "#112233", "voice": X,
+                                      "reviewers": X, "currency": "GBP", "drafting": "template",
+                                      "model": "claude-opus-5-5"})
+    signed_in.post("/clients", data={"csrf_token": tok, "name": X, "sector": X, "conversion_label": X,
+                                     "monthly_target": "10", "context": X})
+    cid = app.state.desk.store.list_clients()[0]["id"]
+    csv = b"channel,sessions,conversions\nOrganic Search,100,5\nPaid Social,50,2\n"
+    signed_in.post(f"/clients/{cid}/{P}/upload", data={"csrf_token": tok, "source_type": "generic"},
+                   files={"file": (X + ".csv", csv, "text/csv")})
+    signed_in.post(f"/clients/{cid}/{P}/draft", data={"csrf_token": tok})
+    app.state.desk.wait()
+    signed_in.post(f"/clients/{cid}/{P}/review", data={"csrf_token": tok, "action": "approve", "reviewer": X,
+                                                       "confirm_flagged": "1", "comment": X})
+    live = re.compile(r"<img src=x onerror|<script>alert")
+    for url in (f"/clients/{cid}/{P}/review", f"/clients/{cid}/{P}/preview", f"/reports/{cid}/{P}/v1.html",
+                "/activity", "/clients", "/settings", f"/month/{P}"):
+        r = signed_in.get(url)
+        assert r.status_code == 200 and not live.search(r.text), url

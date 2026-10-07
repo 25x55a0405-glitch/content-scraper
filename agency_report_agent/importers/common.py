@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import contextvars
 import csv
+import math
 import io
 import re
 from dataclasses import dataclass, field
@@ -19,6 +20,7 @@ from typing import Optional
 from ..model import MONTHS
 
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024
+MAX_FIGURE = 1e12            # no marketing figure is larger than a trillion
 
 # Per-file conventions, detected from the file itself (see detect_conventions).
 # Context variables keep them per import, so parallel uploads can't mix them up.
@@ -73,6 +75,9 @@ def looks_binary(data: bytes) -> bool:
     if head.startswith(b"\xff\xfe") or head.startswith(b"\xfe\xff"):
         return False
     return b"\x00" in head and not (len(head) > 3 and head[1:2] == b"\x00")
+
+
+csv.field_size_limit(1 << 20)       # a 1 MB cell is plenty; the default (128 KB) raises on large exports
 
 
 def split_rows(text: str) -> list[list[str]]:
@@ -153,6 +158,8 @@ def parse_number(raw: Optional[str]) -> Optional[float]:
     try:
         v = float(s)
     except ValueError:
+        return None
+    if not math.isfinite(v) or abs(v) > MAX_FIGURE:      # "nan", "inf", "1e999" are not figures
         return None
     return -v if negative else v
 

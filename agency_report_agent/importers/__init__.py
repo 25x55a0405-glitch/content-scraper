@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import contextvars
+import csv
+import zipfile
 from typing import Optional
 
 from .common import ImportError_, ImportResult, looks_binary
@@ -41,6 +43,20 @@ def import_file(source_type: str, data: bytes, period_hint: Optional[str] = None
 
 
 def _import_file(source_type: str, data: bytes, period_hint: Optional[str] = None) -> ImportResult:
+    try:
+        return _parse(source_type, data, period_hint)
+    except ImportError_:
+        raise
+    except (UnicodeError, csv.Error, ValueError, KeyError, IndexError, TypeError, OverflowError,
+            zipfile.BadZipFile, ZeroDivisionError, RecursionError) as e:
+        # Whatever is wrong with the bytes, the person gets an instruction, never a crash.
+        raise ImportError_(
+            f"I couldn't read that file as a {SOURCES[source_type].split(' (')[0]} export "
+            f"({type(e).__name__}). Check it's the unedited CSV download from the platform, "
+            f"and that it isn't an Excel file or too wide to be a report.") from e
+
+
+def _parse(source_type: str, data: bytes, period_hint: Optional[str] = None) -> ImportResult:
     if source_type not in SOURCES:
         raise ImportError_(f"Unknown source type: {source_type}")
     if not data:
