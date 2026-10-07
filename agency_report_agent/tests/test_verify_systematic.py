@@ -70,6 +70,8 @@ def sentence(sheet: FactSheet, f, value=None, scope=None, direction=None, period
         return f"{sheet.conversion_label.capitalize()} were measured against a target of {v}."
     if f.target_kind == "progress":
         return f"{sheet.conversion_label.capitalize()} finished at {v} of target."
+    if f.value < 0:
+        v = v.lstrip("-")
     return f"{sheet.conversion_label.capitalize()} finished {v} {'ahead of' if f.value >= 0 else 'behind'} target."
 
 

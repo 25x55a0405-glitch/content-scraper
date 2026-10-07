@@ -128,3 +128,51 @@ def test_true_passes(sheet, text):
 @pytest.mark.parametrize("text", FALSE)
 def test_false_flagged(sheet, text):
     assert not verify(text, sheet).ok, f"accepted: {text}"
+
+
+MORE_TRUE = [
+    "Spend was up 16.7% YoY, while leads were up 28.5%.",
+    "Paid search returned $4 for every dollar spent.",
+    "Leads were 0.7% above target.",
+    "Paid search had its most efficient month this year.",
+    "Brand campaigns held steady, with impression share above 90%.",
+    "Paid search CPL has held in the $44–$48 range for two months.",
+    "Email leads were up 5% year over year and direct leads rose 26.7%, while referral leads fell 20%.",
+]
+MORE_FALSE = [
+    "We missed the monthly target of 300 leads by 2.",
+    "Leads were 2% below target.",
+    "Every channel's leads rose this month.",
+    "Paid search was the best channel for ROAS, with 4.00x.",       # true: only paid search has revenue
+]
+
+
+@pytest.mark.parametrize("text", MORE_TRUE)
+def test_more_true_passes(sheet, text):
+    v = verify(text, sheet)
+    assert v.ok, [(i.kind, i.quote, i.message) for i in v.issues]
+
+
+@pytest.mark.parametrize("text", MORE_FALSE[:3])
+def test_more_false_flagged(sheet, text):
+    assert not verify(text, sheet).ok, f"accepted: {text}"
+
+
+def test_ranking_message_names_the_right_channel(sheet):
+    i = verify("Paid search was our largest source of traffic.", sheet).issues[0]
+    assert i.kind == "wrong_ranking" and "Organic Search" in i.message and "4,120" in i.message
+
+
+def test_untracked_metrics_are_unchecked_not_errors(sheet):
+    v = verify("Impression share on brand terms was 90%.", sheet)
+    assert v.ok and any(c.status == "unchecked" for c in v.claims)
+
+
+def test_activity_counts_are_unchecked(sheet):
+    v = verify("We published 4 new articles and fixed 23 crawl errors.", sheet)
+    assert v.ok and sum(c.status == "unchecked" for c in v.claims) == 2
+
+
+def test_currency_mismatch_message(sheet):
+    i = verify("Paid search spend was £5,480.50.", sheet).issues[0]
+    assert i.kind == "wrong_currency" and "$" in i.message

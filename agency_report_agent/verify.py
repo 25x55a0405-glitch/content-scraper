@@ -160,12 +160,12 @@ _SHARE_RX = re.compile(r"(?<![\w-])(?:share|shares|accounted for|account for|acc
 _CHANGE_NOUN_RX = re.compile(r"(?<![\w-])(?:increase|rise|growth|uplift|jump|decrease|decline|drop|fall|"
                              r"dip|reduction|change|improvement|swing|lift|gain)\s+of\s*$", re.I)
 
-_UP = ("rose", "rise", "rises", "rising", "risen", "grew", "grow", "grows", "growing", "grown",
+_UP = ("beat", "beating", "exceeded", "exceeding", "surpassed", "topped", "above", "rose", "rise", "rises", "rising", "risen", "grew", "grow", "grows", "growing", "grown",
        "growth", "increase", "increased", "increases", "increasing", "up", "climbed", "climb",
        "climbing", "jumped", "jump", "jumps", "gained", "gain", "gains", "higher", "boost",
        "boosted", "surged", "surge", "lifted", "lift", "uplift", "added", "expanded", "more",
        "ahead", "upturn", "peaked", "doubled", "tripled", "trebled", "quadrupled")
-_DOWN = ("fell", "fall", "falls", "falling", "fallen", "dropped", "drop", "drops", "dropping",
+_DOWN = ("missed", "missing", "below", "fell", "fall", "falls", "falling", "fallen", "dropped", "drop", "drops", "dropping",
          "declined", "decline", "declines", "declining", "decrease", "decreased", "decreasing",
          "down", "lower", "fewer", "less", "slipped", "slip", "dipped", "dip", "dips", "shrank",
          "shrunk", "reduced", "reduction", "cut", "eased", "softened", "slowed", "contracted",
@@ -224,7 +224,7 @@ _SKIP_BEFORE_RX = re.compile(r"(?:\btop|\bpage|\bstep|\bphase|\bweek|\bday|\btie
 _MONTH_NAMES = MONTHS + tuple(m[:3] for m in MONTHS) + ("Sept",)
 _MONTH_RX = re.compile(rf"\b(?:{'|'.join(_MONTH_NAMES)})\.?\b")
 _EVERY_POUND_RX = re.compile(r"([£$€])(\d+(?:\.\d+)?)\s+(?:back\s+|in\s+(?:revenue|sales|return|income)\s+)?(?:for|per)\s+every\s+"
-                             r"[£$€]1(?:\.00)?\b(?:\s+(?:of\s+(?:ad\s+)?(?:spend|budget)|spent|invested))?")
+                             r"(?:[£$€]1(?:\.00)?|dollar|pound|euro)\b(?:\s+(?:of\s+(?:ad\s+)?(?:spend|budget)|spent|invested))?")
 
 _CAUSE_RX = re.compile(r"(?:mainly|mostly|largely|primarily|partly|chiefly|driven|thanks to|due to|led by|"
                        r"because of)\b", re.I)
@@ -246,6 +246,10 @@ _COMPARE_CUE_RX = re.compile(r"(?:\bvs\.?|\bversus|\bagainst|\bcompared (?:with|
 _CHANNEL_GAP_RX = re.compile(r"\s*(?:\w+\s+){0,2}?(?:from|for|on|at|in|with|by|via|through)\s+(?:the\s+|our\s+|its\s+)?$", re.I)
 _FUTURE_HEADING_RX = re.compile(r"next (?:month|steps|quarter)|recommend|plan|outlook|priorit|roadmap|looking ahead|"
                                 r"going forward|what.?s next|focus|proposal|opportunit|actions?$", re.I)
+_UNTRACKED_RX = re.compile(r"(?<![\w-])(?:impression share|search impression share|quality score|bounce rate|engagement rate|"
+                           r"engaged sessions?|average order value|aov|lifetime value|ltv|churn|retention|open rate|"
+                           r"unsubscribe\w*|page speed|core web vitals|domain (?:rating|authority)|backlinks?|"
+                           r"referring domains|keyword rankings?|top[- ]\d+ (?:keywords|rankings))(?![\w-])", re.I)
 _STOP_NOUNS = frozenset("of to in on at and or for from with by this last the a an as vs versus than compared per "
                         "out up down so but which while over month months year years is was were are it its their "
                         "our your we they that these those has have had".split())
@@ -591,6 +595,12 @@ class _Reader:
                 continue
             if w == "cut" and re.search(r"\b(?:a|the)\s+$", before):
                 continue
+            if w in ("beat", "beating", "exceeded", "exceeding", "surpassed", "topped", "missed", "missing",
+                     "above", "below") and not re.search(r"\b(?:target|goal)\b", self.s, re.I):
+                continue                  # only direction words when talking about the target
+            if w in ("above", "below") and not re.match(
+                    r"\s+(?:the\s+|our\s+|your\s+|its\s+)?(?:monthly\s+)?(?:target|goal)", after, re.I):
+                continue
             hits.append((m.start(), m.end(), _DIR_WORDS[w]))
         return hits
 
@@ -694,14 +704,19 @@ class _Reader:
         ca, cb = self.clause(pos)
         modes_clause = [mode for a, b, mode in self.periods if ca <= a < cb and mode != "current"]
         # A comparison phrase in a *different* clause that has its own figure belongs to that figure.
-        modes_sent = [mode for a, b, mode in self.periods if mode != "current"
-                      and not (not (ca <= a < cb) and self._clause_has_number(a))]
+        def usable(a: int) -> bool:
+            if ca <= a < cb:
+                return True
+            # "up 16.7% YoY, while leads were up 28.5%": a phrase earlier in the sentence carries forward;
+            # one that comes later and sits in a clause with its own figure belongs to that figure.
+            return a < ca or not self._clause_has_number(a)
+        modes_sent = [mode for a, b, mode in self.periods if mode != "current" and usable(a)]
         for modes in (modes_clause, modes_sent):
             if modes:
                 # the nearest one wins
                 near = min(((abs(a - pos), mode) for a, b, mode in self.periods
-                            if mode != "current" and (ca <= a < cb or (
-                                modes is modes_sent and not self._clause_has_number(a)))), default=None)
+                            if mode != "current" and (ca <= a < cb or (modes is modes_sent and usable(a)))),
+                           default=None)
                 if near:
                     return "yoy" if near[1] == "year_ago" else "mom"
         return None
@@ -946,7 +961,7 @@ def _truth(f: Fact, m: _Mention) -> float:
     v = f.value
     if m.unit == "percent" and f.metric == "roas" and f.kind == "value":
         v *= 100
-    if f.kind in ("change", "delta") or (f.kind == "target" and f.target_kind == "gap"):
+    if f.kind in ("change", "delta") or (f.kind == "target" and f.target_kind in ("gap", "gap_pct")):
         v = abs(v)
     return v
 
@@ -1052,6 +1067,9 @@ def _check_mention(res: Verification, r: _Reader, m: _Mention, sheet: FactSheet,
 
     num_ok = [f for f in sheet.facts if _num_ok(f, m)]
     good = [f for f in num_ok if not ctx.fails(f)]
+    if not good and _UNTRACKED_RX.search(s[ca_:cb_]):
+        res.claims.append(Claim(quote, abs_a, abs_b, "unchecked", None, cited))     # a platform metric we don't import
+        return
     if not good and m.unit == "count" and not own_metric and not m.sign and _activity_noun(s, m):
         # "We published 4 new articles": something the agency did, not a figure from the data
         res.claims.append(Claim(quote, abs_a, abs_b, "unchecked", None, cited))
@@ -1171,10 +1189,10 @@ def _expected(sheet: FactSheet, ctx: _Ctx, m: _Mention) -> Optional[Fact]:
 def _direction_issue(r: _Reader, m: _Mention, f: Fact, metrics, sheet: FactSheet, quote: str,
                      a: int, b: int) -> Optional[Issue]:
     stated = r.stated_direction(m, frozenset({f.metric}))
-    if stated is None:
+    if stated is None or (m.rng and stated == "flat"):
         return None
     sentence = r.s.strip()
-    if f.kind in ("change", "delta") or (f.kind == "target" and f.target_kind == "gap"):
+    if f.kind in ("change", "delta") or (f.kind == "target" and f.target_kind in ("gap", "gap_pct")):
         actual = f.value
         if f.kind == "change":
             pct = actual
@@ -1331,10 +1349,17 @@ def _check_rankings(res: Verification, r: _Reader, sheet: FactSheet, raw: str) -
         if metric:
             ranked(metric, metric != "spend" or True, _rank_subject(r, m.start()), m,
                    f"{m.group(0).split()[0].lower()} source of {_metric_name(metric, sheet)}")
+    def about_channels(end: int) -> bool:
+        return bool(re.search(r"\b(?:channels?|sources?|campaign types?)\b|\bof (?:the|our|all|any)\b", s[end:end + 60], re.I))
+
     for m in _EFFICIENT_RX.finditer(s):
+        if not about_channels(m.end()):
+            continue                       # "its most efficient month" compares months, not channels
         metric = "cpc" if re.search(r"click|cpc", s[m.start():m.end() + 25], re.I) else "cpa"
         ranked(metric, False, _rank_subject(r, m.start()), m, "most cost-efficient channel")
     for m in _BEST_METRIC_RX.finditer(s):
+        if not about_channels(m.end()):
+            continue
         metric, hib = _RANK_METRIC[m.group(2).lower()]
         want_high = m.group(1).lower() in ("highest", "best", "strongest", "top")
         highest = want_high if hib else not want_high

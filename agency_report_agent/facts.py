@@ -205,6 +205,9 @@ def build_facts(current: PeriodData, previous: Optional[PeriodData] = None,
         facts.append(Fact("", TOTAL, "conversions", "target", "current", tot_conv / target * 100, "percent",
                           f"{conversion_label.capitalize()} as % of target", target_kind="progress"))
         gap = tot_conv - target
+        facts.append(Fact("", TOTAL, "conversions", "target", "current", (tot_conv / target - 1) * 100, "percent",
+                          f"{conversion_label.capitalize()} above (+) or below (−) target, as a percentage",
+                          target_kind="gap_pct", direction="up" if gap >= 0 else "down"))
         facts.append(Fact("", TOTAL, "conversions", "target", "current", gap, "count",
                           f"{conversion_label.capitalize()} above (+) or below (−) target",
                           target_kind="gap", direction="up" if gap >= 0 else "down"))
