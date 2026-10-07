@@ -197,3 +197,24 @@ About 400 tests, including:
   Meta are the next step; the importers and everything after them won't
   change when they arrive.
 - One team password per installation; no per-client permissions yet.
+
+---
+
+## Deploying
+
+Report Desk keeps its data on disk (uploads, approved reports, SQLite review state) and prints PDFs with
+Chromium, so it needs a host with a **persistent volume** — a Fly.io/Railway/Render service or a small VPS.
+It does not run inside a Cloudflare Worker, and a Cloudflare Container's disk is wiped on restart.
+
+```bash
+docker build -t report-desk .
+docker run -p 8000:8000 -v report-desk-data:/data \
+  -e REPORT_DESK_PASSWORD='a long team password' \
+  -e ANTHROPIC_API_KEY=...            `# optional` \
+  -e REPORT_DESK_TRUSTED_PROXIES='*'  `# only when it sits behind your proxy/tunnel` \
+  report-desk
+```
+
+Put Cloudflare in front for HTTPS: either proxy the host's DNS record through Cloudflare, or run
+`cloudflared` (Cloudflare Tunnel) beside the container, and optionally add a Cloudflare Access policy so only
+your team's email addresses can reach the login page. Back up the `/data` volume.

@@ -23,7 +23,8 @@ def main() -> None:
                  "Set REPORT_DESK_PASSWORD first.")
     print(f"\n  Report Desk running at http://{'127.0.0.1' if local else args.host}:{args.port}\n")
     uvicorn.run("agency_report_agent.web.app:create_app", factory=True, host=args.host, port=args.port,
-                proxy_headers=True, forwarded_allow_ips="127.0.0.1")
+                proxy_headers=True,
+                forwarded_allow_ips=os.environ.get("REPORT_DESK_TRUSTED_PROXIES", "127.0.0.1"))
 
 
 if __name__ == "__main__":

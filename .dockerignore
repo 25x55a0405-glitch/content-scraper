@@ -1,0 +1,11 @@
+.git
+__pycache__
+*.pyc
+report_desk_data
+report-desk-video
+reports
+research_notes
+outreach
+docs
+node_modules
+.env
