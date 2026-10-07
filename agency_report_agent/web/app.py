@@ -669,11 +669,12 @@ def _when(iso: Optional[str]) -> str:
 
 def _channel_rows(pd) -> list[dict]:
     rows = []
+    has = {m: any(row.get(m) for row in pd.values.values()) for m in ("spend", "revenue", "clicks")}
     for scope in pd.channels() + ([TOTAL] if TOTAL in pd.values else []):
         row = pd.values.get(scope, {})
         rows.append({"scope": scope, "label": channel_label(scope),
-                     "cells": {m: row.get(m) for m in ("sessions", "conversions", "spend", "revenue", "clicks",
-                                                         "impressions")},
+                     "cells": {m: (row.get(m) if has.get(m, True) else None)
+                               for m in ("sessions", "conversions", "spend", "revenue", "clicks", "impressions")},
                      "origin": pd.origin.get(scope, {})})
     return rows
 
@@ -692,6 +693,9 @@ def _review_html(draft: str, ver: Verification, sheet: FactSheet) -> str:
     """The draft as the reviewer sees it: every checked figure marked, problems highlighted, sources on hover."""
     import html as _h
 
+    def attr(t: str) -> str:          # brackets escaped so the citation pass can't touch attributes
+        return _h.escape(t).replace("[", "&#91;").replace("]", "&#93;")
+
     spans = sorted(((c.start, c.end, i) for i, c in enumerate(ver.claims) if 0 <= c.start < c.end <= len(draft)),
                    key=lambda x: x[0])
     keep, last_end = [], -1
@@ -702,19 +706,19 @@ def _review_html(draft: str, ver: Verification, sheet: FactSheet) -> str:
     text = draft
     for start, end, i in reversed(keep):
         text = text[:start] + f"{_PRIV_OPEN}{i}{_PRIV_MID}" + text[start:end] + _PRIV_CLOSE + text[end:]
-    out = md_to_html(text, keep_citations=True)
+    out = md_to_html(text)              # fact IDs are carried by the marks' hover text instead
     issue_by_span = {(i.start, i.end): i for i in ver.issues}
 
     def open_tag(m):
         c = ver.claims[int(m.group(1))]
         if c.status == "verified" and c.fact_id and sheet.by_id(c.fact_id):
             f = sheet.by_id(c.fact_id)
-            tip = f"{f.label}: {sheet.fmt(f)} [{f.id}]"
-            return f'<mark class="claim ok" title="{_h.escape(tip)}" data-fact="{f.id}">'
+            tip = f"{f.label}: {sheet.fmt(f)} ({f.id})"
+            return f'<mark class="claim ok" title="{attr(tip)}" data-fact="{f.id}">'
         if c.status == "issue":
             iss = issue_by_span.get((c.start, c.end))
             tip = iss.message if iss else "Couldn't be backed by the data."
-            return f'<mark class="claim bad" title="{_h.escape(tip)}">'
+            return f'<mark class="claim bad" title="{attr(tip)}">'
         if c.status == "forward_looking":
             return '<mark class="claim future" title="About the future — not checked against the data.">'
         return '<mark class="claim unchecked" title="Not a figure from the data — check it yourself.">'
@@ -722,10 +726,5 @@ def _review_html(draft: str, ver: Verification, sheet: FactSheet) -> str:
     out = re.sub(re.escape(_PRIV_OPEN) + r"(\d+)" + re.escape(_PRIV_MID), open_tag, out)
     out = out.replace(_PRIV_CLOSE, "</mark>")
 
-    def cite(m):
-        ids = re.findall(r"F\d+", m.group(0))
-        labels = [f"{sheet.by_id(x).label}: {sheet.fmt(sheet.by_id(x))}" for x in ids if sheet.by_id(x)]
-        return f'<sup class="cite" title="{_h.escape("; ".join(labels) or "Unknown fact")}">{" ".join(ids)}</sup>'
-
-    return re.sub(r"\s?\[\s*F\d+(?:\s*[,;/]\s*F?\d+)*\s*\]", cite, out)
+    return out
 

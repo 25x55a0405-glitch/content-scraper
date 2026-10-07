@@ -3,7 +3,7 @@
 {% block content %}
 <div class="page-head"><div><h1>Clients</h1><p class="sub">{{ clients|rejectattr('archived')|list|length }} on monthly reporting.</p></div></div>
 <div class="review-grid">
-<div class="card"><div class="table-scroll"><table class="rows">
+<div class="card"><div class="table-scroll"><table class="rows stack">
   <thead><tr><th scope="col">Client</th><th scope="col">Counts</th><th scope="col" class="right">Monthly target</th><th scope="col" class="right"><span class="sr-only">Actions</span></th></tr></thead>
   <tbody>{% for c in clients %}<tr {% if c.archived %}class="archived"{% endif %}>
     <td><a class="client-name" href="/clients/{{ c.id }}/{{ current_period }}">{{ c.name }}</a><div class="client-sub">{{ c.sector or '—' }}{% if c.archived %} · archived{% endif %}</div></td>

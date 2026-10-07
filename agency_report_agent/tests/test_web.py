@@ -255,3 +255,15 @@ def test_settings_validation(signed_in):
     r = signed_in.post("/settings", data={"csrf_token": tok, "name": "A", "brand_color": "#112233"},
                        files={"logo": ("x.svg", b'<svg onload="alert(1)"/>', "image/svg+xml")})
     assert "scripts" in r.text
+
+
+def test_review_markup_is_well_formed(signed_in, app):
+    seed(app)
+    desk = app.state.desk
+    desk.start("oakfield-veterinary", P)
+    html = signed_in.get(f"/clients/oakfield-veterinary/{P}/review").text
+    view = html.split('class="card-body draft-view">', 1)[1].split("</div>", 1)[0]
+    assert 'data-fact="' in view and '" data-fact=' not in view.replace('" data-fact="F', "")
+    assert "data-fact=&#34;" not in view and '&#34;' not in view
+    assert view.count("<mark") == view.count("</mark>") > 20
+    assert re.search(r'<mark class="claim ok" title="[^"<>]+" data-fact="F\d+">', view)

@@ -433,3 +433,21 @@ sup.cite { font-family: var(--mono); font-size: 9.5px; color: var(--muted); marg
 .fact dd { margin: 0; white-space: nowrap; }
 .fid { font-family: var(--mono); font-size: 10px; color: var(--muted); }
 .facts { max-height: 520px; overflow: auto; }
+.table-scroll { position: relative; }
+.sr-only { clip-path: inset(50%); margin: -1px; padding: 0; border: 0; top: 0; left: 0; }
+.favicon-none { display: none; }
+
+/* On phones the client list becomes a stack of cards rather than a sideways-scrolling table. */
+@media (max-width: 640px) {
+  table.rows.stack { min-width: 0; }
+  table.rows.stack thead { display: none; }
+  table.rows.stack, table.rows.stack tbody, table.rows.stack tr, table.rows.stack td { display: block; width: 100%; }
+  table.rows.stack tr { padding: 14px 16px; border-bottom: 1px solid var(--rule); }
+  table.rows.stack tr:last-child { border-bottom: 0; }
+  table.rows.stack td { padding: 4px 0; border: 0; }
+  table.rows.stack td.right { text-align: left; padding-top: 10px; }
+  table.rows.stack td.checkcell { max-width: none; }
+}
+table.rows tbody th { font-family: var(--body); font-size: 14px; letter-spacing: 0; text-transform: none;
+  color: var(--ink); font-weight: 500; padding: 9px 14px; border-bottom: 1px solid var(--rule); }
+table.rows tbody tr:last-child th { border-bottom: none; }
