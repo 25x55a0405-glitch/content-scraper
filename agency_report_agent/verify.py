@@ -1070,7 +1070,8 @@ def _check_mention(res: Verification, r: _Reader, m: _Mention, sheet: FactSheet,
     if not good and _UNTRACKED_RX.search(s[ca_:cb_]):
         res.claims.append(Claim(quote, abs_a, abs_b, "unchecked", None, cited))     # a platform metric we don't import
         return
-    if not good and m.unit == "count" and not own_metric and not m.sign and _activity_noun(s, m):
+    if (not good or metrics is None) and m.unit == "count" and not own_metric and not m.sign \
+            and _activity_noun(s, m):
         # "We published 4 new articles": something the agency did, not a figure from the data
         res.claims.append(Claim(quote, abs_a, abs_b, "unchecked", None, cited))
         return
