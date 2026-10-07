@@ -447,3 +447,17 @@ def test_prose2_true(sheet, text):
 @pytest.mark.parametrize("text", PROSE2_FALSE)
 def test_prose2_false(sheet, text):
     assert not verify(text, sheet).ok
+
+
+def test_zero_revenue_everywhere_is_dropped():
+    cur = _pd("2026-09", {"organic_search": {"sessions": 100, "conversions": 5, "revenue": 0.0}})
+    prev = _pd("2026-08", {"organic_search": {"sessions": 90, "conversions": 4, "revenue": 0.0}})
+    s = build_facts(cur, prev)
+    assert not any(f.metric in ("revenue", "roas") for f in s.facts)
+
+
+def test_revenue_dropping_to_zero_is_kept():
+    cur = _pd("2026-09", {"organic_search": {"sessions": 100, "conversions": 5, "revenue": 0.0}})
+    prev = _pd("2026-08", {"organic_search": {"sessions": 90, "conversions": 4, "revenue": 800.0}})
+    s = build_facts(cur, prev)
+    assert s.find("organic_search", "revenue", "value", "previous").value == 800

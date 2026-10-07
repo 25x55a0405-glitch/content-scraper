@@ -148,6 +148,9 @@ def build_facts(current: PeriodData, previous: Optional[PeriodData] = None,
     yago_lbl = period_label(year_ago.period) if sheet.year_ago_period else ""
 
     current = _with_missing_channels(current, previous)
+    if not _has_revenue(current) and not _has_revenue(previous):
+        # GA4 always exports a revenue column; for a business that doesn't sell online it's all zeros.
+        current, previous, year_ago = (_without(p, ("revenue", "roas")) for p in (current, previous, year_ago))
     scopes = ([TOTAL] if TOTAL in current.values else []) + current.channels()
     metric_order = [m for m in METRICS]
 
@@ -238,6 +241,20 @@ def _with_missing_channels(current: PeriodData, previous: Optional[PeriodData]) 
                 added = True
         if added:
             compute_derived(out)
+    return out
+
+
+def _has_revenue(pd: Optional[PeriodData]) -> bool:
+    return bool(pd) and any(row.get("revenue") for row in pd.values.values())
+
+
+def _without(pd: Optional[PeriodData], metrics: tuple[str, ...]) -> Optional[PeriodData]:
+    if pd is None:
+        return None
+    out = PeriodData.from_dict(pd.to_dict())
+    for row in out.values.values():
+        for m in metrics:
+            row.pop(m, None)
     return out
 
 
