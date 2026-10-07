@@ -1,5 +1,6 @@
 <template>
   <style>
+    @font-face { font-family:'Archivo'; src:url('assets/fonts/archivo-var.woff2') format('woff2-variations'); font-weight:100 900; font-style:normal; font-display:block; }
     /* ───── 06-lockup — Report Desk closing lockup ─────
        Paper #F6F6F4 · ink #15181C · secondary #717A85 · hairline #E4E6E3
        No status colour. No shadow, no gradient, no glow. */
@@ -10,7 +11,7 @@
       height: 1080px;
       overflow: hidden;
       container-type: size;
-      font-family: ui-sans-serif, system-ui, sans-serif;
+      font-family: 'Archivo', ui-sans-serif, system-ui, sans-serif;
       -webkit-font-smoothing: antialiased;
     }
 
@@ -213,7 +214,7 @@
       tl.fromTo(
         "#f06-lockup-mark-outer",
         { fillOpacity: 0 },
-        { fillOpacity: 1, duration: 0.24, ease: "power1.out" },
+        { fillOpacity: 1, duration: 0.24, ease: "power1.out", immediateRender: false },
         0.6
       );
       tl.fromTo(

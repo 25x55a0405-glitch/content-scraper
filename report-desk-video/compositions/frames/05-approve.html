@@ -9,21 +9,21 @@
     ---------------------------------------------------------------------- */
     @font-face {
       font-family: 'Archivo';
-      src: url('../../assets/fonts/archivo-var.woff2') format('woff2-variations');
+      src: url('assets/fonts/archivo-var.woff2') format('woff2-variations');
       font-weight: 100 900;
       font-style: normal;
       font-display: block;
     }
     @font-face {
       font-family: 'IBM Plex Mono';
-      src: url('../../assets/fonts/plexmono-400.woff2') format('woff2');
+      src: url('assets/fonts/plexmono-400.woff2') format('woff2');
       font-weight: 400;
       font-style: normal;
       font-display: block;
     }
     @font-face {
       font-family: 'IBM Plex Mono';
-      src: url('../../assets/fonts/plexmono-500.woff2') format('woff2');
+      src: url('assets/fonts/plexmono-500.woff2') format('woff2');
       font-weight: 500;
       font-style: normal;
       font-display: block;
@@ -68,6 +68,7 @@
        element's scale stays literally 1 at both boundaries.               */
     #f5-rule {
       position: absolute;
+      transform-origin: 0 0;
       left: 192px;
       top: 626px;
       width: 1536px;
@@ -255,11 +256,11 @@
     }
   </style>
 
-  <div id="root" data-composition-id="05-approve">
+  <div id="root" data-composition-id="05-approve" data-width="1920" data-height="1080" data-duration="5.5">
     <!-- full-bleed paper ground -->
-    <div id="f5-ground" class="f5-layer clip" data-start="0" data-duration="5" data-track-index="0"></div>
+    <div id="f5-ground" class="f5-layer clip" data-start="0" data-duration="5.5" data-track-index="0"></div>
 
-    <div class="f5-layer clip" data-start="0" data-duration="5" data-track-index="1">
+    <div class="f5-layer clip" data-start="0" data-duration="5.5" data-track-index="1">
       <!-- the inherited baseline -->
       <div id="f5-rule"></div>
 
@@ -383,7 +384,7 @@
       /* handoff_out — rule settles to y=70%, x 36%–64%, opacity 1, scale 1,
          then holds static through the end of the frame.                   */
       tl.to("#f5-rule",
-        { left: 691.2, width: 537.6, top: 756, duration: 0.90, ease: "power3.out" },
+        { x: 499.2, y: 130, scaleX: 0.35, duration: 0.90, ease: "power3.out" },
         3.55);
 
       window.__timelines["05-approve"] = tl;

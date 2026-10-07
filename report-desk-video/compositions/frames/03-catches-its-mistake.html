@@ -1,9 +1,9 @@
 <template>
-  <div id="root" data-composition-id="03-catches-its-mistake">
+  <div id="root" data-composition-id="03-catches-its-mistake" data-width="1920" data-height="1080">
     <style>
-      @font-face { font-family:'Archivo'; src:url('../../assets/fonts/archivo-var.woff2') format('woff2-variations'); font-weight:100 900; font-style:normal; font-display:block; }
-      @font-face { font-family:'IBM Plex Mono'; src:url('../../assets/fonts/plexmono-400.woff2') format('woff2'); font-weight:400; font-style:normal; font-display:block; }
-      @font-face { font-family:'IBM Plex Mono'; src:url('../../assets/fonts/plexmono-500.woff2') format('woff2'); font-weight:500; font-style:normal; font-display:block; }
+      @font-face { font-family:'Archivo'; src:url('assets/fonts/archivo-var.woff2') format('woff2-variations'); font-weight:100 900; font-style:normal; font-display:block; }
+      @font-face { font-family:'IBM Plex Mono'; src:url('assets/fonts/plexmono-400.woff2') format('woff2'); font-weight:400; font-style:normal; font-display:block; }
+      @font-face { font-family:'IBM Plex Mono'; src:url('assets/fonts/plexmono-500.woff2') format('woff2'); font-weight:500; font-style:normal; font-display:block; }
 
       #root {
         position: relative;
@@ -70,8 +70,9 @@
       #cmi-rule {
         position: absolute;
         left: 268.8px;
-        top: 324px;
-        width: 1382.4px;
+        top: 496.8px;
+        width: 921.6px;
+        transform-origin: 0 0;
         height: 1px;
         background: var(--hair);
       }
@@ -107,6 +108,7 @@
         color: var(--ink);
       }
       .cmi-caret {
+        display: none;
         position: absolute;
         left: 0;
         top: 8px;
@@ -264,8 +266,8 @@
         // handoff_in: at t=0 the rule is already at y=324 (30%), x 14%–86%, opacity 1,
         // scale 1, static. It then drops to sit directly under the draft sentence and
         // narrows to the handoff_out boundary: y=496.8 (46%), x 14%–62%.
-        gsap.set("#cmi-rule", { top: 324, width: 1382.4, opacity: 1 });
-        tl.to("#cmi-rule", { top: 496.8, width: 921.6, duration: 1.0, ease: "power2.inOut" }, 0.2);
+        gsap.set("#cmi-rule", { y: -172.8, scaleX: 1.5, opacity: 1 });
+        tl.to("#cmi-rule", { y: 0, scaleX: 1, duration: 1.0, ease: "power2.inOut" }, 0.2);
 
         tl.fromTo("#cmi-eyebrow", { opacity: 0 }, { opacity: 1, duration: 0.4, ease: "power1.out" }, 0.0);
 
@@ -277,8 +279,6 @@
         ];
         LINES.forEach(function (L) {
           tl.fromTo(L.line, { clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0% 0 0)", duration: L.dur, ease: "none" }, L.at);
-          tl.fromTo(L.caret, { left: "0%", opacity: 1 }, { left: "100%", duration: L.dur, ease: "none" }, L.at);
-          tl.set(L.caret, { opacity: 0 }, L.at + L.dur + 0.04);
         });
 
         // the empty trail panel establishes alongside
