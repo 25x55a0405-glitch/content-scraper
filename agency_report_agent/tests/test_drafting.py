@@ -164,3 +164,59 @@ def test_revision_prompt_carries_feedback_and_previous_draft(store):
 def test_new_client_prompt_says_no_comparisons(store):
     _, user = llm.build_prompt(_request(store, "atlas-removals"))
     assert "first month of data" in user
+
+
+# --------------------------------------------------------------------------- #
+# An OpenAI-compatible endpoint (Mistral, OpenRouter, a gateway) behind the same checks
+# --------------------------------------------------------------------------- #
+class _Resp:
+    def __init__(self, status, payload):
+        self.status_code, self._p = status, payload
+
+    def json(self):
+        return self._p
+
+
+def test_compatible_endpoint_success_and_request_shape(store, monkeypatch):
+    monkeypatch.setenv("REPORT_DESK_LLM_BASE_URL", "https://llm.example/v1/")
+    monkeypatch.setenv("REPORT_DESK_LLM_KEY", "k-test")
+    req = _request(store, "brightwave-dental")
+    seen = {}
+
+    def post(url, json, headers, timeout):
+        seen.update(url=url, json=json, headers=headers)
+        return _Resp(200, {"model": "mistralai/mistral-large-4-0", "usage": {"prompt_tokens": 9, "completion_tokens": 7},
+                           "choices": [{"finish_reason": "stop", "message": {"content": template_draft(req).text}}]})
+
+    res = llm.compatible_draft(req, "mistralai/mistral-large-4-0", post=post)
+    assert res.writer == "claude" and verify(res.text, req.sheet).ok
+    assert seen["url"] == "https://llm.example/v1/chat/completions"
+    assert seen["headers"]["Authorization"] == "Bearer k-test"
+    assert seen["json"]["messages"][0]["role"] == "system" and "temperature" not in seen["json"]
+
+
+@pytest.mark.parametrize("status,payload,reason", [
+    (401, {}, "rejected the API key"), (404, {}, "isn't available"), (429, {}, "rate limit"),
+    (500, {}, "returned an error"), (200, {"nope": 1}, "expected format"),
+    (200, {"choices": [{"finish_reason": "length", "message": {"content": "## Summary"}}]}, "cut off"),
+    (200, {"choices": [{"finish_reason": "stop", "message": {"content": "Sure, here you go."}}]}, "format"),
+])
+def test_compatible_endpoint_failures(store, monkeypatch, status, payload, reason):
+    monkeypatch.setenv("REPORT_DESK_LLM_BASE_URL", "https://llm.example/v1")
+    monkeypatch.setenv("REPORT_DESK_LLM_KEY", "k")
+    with pytest.raises(llm.DraftError, match=reason):
+        llm.compatible_draft(_request(store, "kestrel-accounting"), "m/x", post=lambda *a, **k: _Resp(status, payload))
+
+
+def test_non_claude_model_without_endpoint_falls_back(store, monkeypatch):
+    for v in ("REPORT_DESK_LLM_BASE_URL", "REPORT_DESK_LLM_KEY", "REPORT_DESK_LLM_MODEL"):
+        monkeypatch.delenv(v, raising=False)
+    res = llm.write_draft(_request(store, "kestrel-accounting"), "claude", "mistralai/mistral-large-4-0")
+    assert res.writer == "template" and "No endpoint" in res.fallback_reason
+
+
+def test_extra_model_appears_in_settings_choices(monkeypatch):
+    monkeypatch.setenv("REPORT_DESK_LLM_BASE_URL", "https://x/v1")
+    monkeypatch.setenv("REPORT_DESK_LLM_KEY", "k")
+    monkeypatch.setenv("REPORT_DESK_LLM_MODEL", "mistralai/mistral-large-4-0")
+    assert "mistralai/mistral-large-4-0" in llm.available_models() and llm.claude_available()

@@ -39,7 +39,7 @@ from ..desk import RUNNING, STATUS_LABELS, Desk, DeskError
 from ..facts import FactSheet
 from ..importers import SOURCES, ImportError_, import_file
 from ..importers.common import MAX_UPLOAD_BYTES
-from ..llm import MODELS, claude_available
+from ..llm import available_models, claude_available
 from ..model import BASE_METRICS, CHANNELS, METRICS, TOTAL, channel_label, is_period, period_label, shift_period
 from ..render import md_to_html, render_report, strip_citations
 from ..store import CURRENCY_SYMBOLS, SOURCE_NAMES, StoreError
@@ -562,7 +562,7 @@ def create_app(home: Optional[str] = None) -> FastAPI:
     def settings(request: Request):
         if (r := guard(request)):
             return r
-        return page(request, "settings.html", models=MODELS, currencies=list(CURRENCY_SYMBOLS))
+        return page(request, "settings.html", models=available_models(), currencies=list(CURRENCY_SYMBOLS))
 
     @app.post("/settings")
     async def save_settings(request: Request):
@@ -589,7 +589,7 @@ def create_app(home: Optional[str] = None) -> FastAPI:
         drafting = str(form.get("drafting", "template"))
         updates["drafting"] = drafting if drafting in ("template", "claude") else "template"
         model = str(form.get("model", ""))
-        updates["model"] = model if model in MODELS else desk.store.agency().get("model")
+        updates["model"] = model if model in available_models() else desk.store.agency().get("model")
         logo = form.get("logo")
         if logo is not None and getattr(logo, "filename", ""):
             data = await logo.read(1024 * 1024 + 1)

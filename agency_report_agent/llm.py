@@ -40,8 +40,69 @@ def api_key() -> str:
     return os.environ.get("ANTHROPIC_API_KEY", "").strip()
 
 
+def other_endpoint() -> tuple[str, str, str]:
+    """(base_url, key, model) for an OpenAI-compatible service (OpenRouter, a gateway, Mistral…), from the environment."""
+    return (os.environ.get("REPORT_DESK_LLM_BASE_URL", "").strip().rstrip("/"),
+            os.environ.get("REPORT_DESK_LLM_KEY", "").strip(),
+            os.environ.get("REPORT_DESK_LLM_MODEL", "").strip())
+
+
+def available_models() -> dict[str, str]:
+    models = dict(MODELS)
+    base, key, model = other_endpoint()
+    if base and key and model:
+        models[model] = f"{model} — via your own endpoint"
+    return models
+
+
 def claude_available() -> bool:
-    return bool(api_key())
+    base, key, model = other_endpoint()
+    return bool(api_key()) or bool(base and key and model)
+
+
+def _is_claude(model: str) -> bool:
+    return model.startswith("claude-")
+
+
+def compatible_draft(req: DraftRequest, model: str, post=None) -> DraftResult:
+    """Draft through an OpenAI-compatible chat endpoint. Same prompt, same checks afterwards."""
+    import httpx
+
+    base, key, _ = other_endpoint()
+    if not (base and key):
+        raise DraftError("No endpoint is configured for this model (REPORT_DESK_LLM_BASE_URL and REPORT_DESK_LLM_KEY).")
+    system, user = build_prompt(req)
+    body = {"model": model, "max_tokens": MAX_TOKENS,
+            "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
+    try:
+        r = (post or httpx.post)(f"{base}/chat/completions", json=body, timeout=TIMEOUT,
+                                 headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
+    except httpx.HTTPError as e:
+        raise DraftError("Couldn't reach the model endpoint (network or timeout).") from e
+    if r.status_code in (401, 403):
+        raise DraftError("The model endpoint rejected the API key.")
+    if r.status_code == 404:
+        raise DraftError(f"The model \"{model}\" isn't available at that endpoint.")
+    if r.status_code == 429:
+        raise DraftError("The model endpoint's rate limit was reached; try again in a minute.")
+    if r.status_code >= 400:
+        raise DraftError(f"The model endpoint returned an error ({r.status_code}).")
+    try:
+        data = r.json()
+        choice = data["choices"][0]
+        text = choice["message"]["content"] or ""
+    except (ValueError, KeyError, IndexError, TypeError) as e:
+        raise DraftError("The model endpoint's reply wasn't in the expected format.") from e
+    if choice.get("finish_reason") in ("length", "max_tokens"):
+        raise DraftError("The model's draft was cut off before it finished.")
+    if choice.get("finish_reason") == "content_filter":
+        raise DraftError("The model declined to write this draft.")
+    text = clean_draft(text)
+    if "## Summary" not in text or "## Channel by channel" not in text:
+        raise DraftError("The model's draft didn't follow the report format.")
+    usage = data.get("usage") or {}
+    return DraftResult(text, "claude", data.get("model") or model, input_tokens=usage.get("prompt_tokens", 0) or 0,
+                       output_tokens=usage.get("completion_tokens", 0) or 0)
 
 
 # --------------------------------------------------------------------------- #
@@ -206,6 +267,8 @@ def clean_draft(text: str) -> str:
 
 def claude_draft(req: DraftRequest, model: Optional[str] = None, client=None) -> DraftResult:
     model = model or os.environ.get("REPORT_DESK_MODEL") or DEFAULT_MODEL
+    if not _is_claude(model):
+        return compatible_draft(req, model)
     system, user = build_prompt(req)
     client = client or _client()
     resp = _call(client, _params(model, system, user))
@@ -237,5 +300,5 @@ def write_draft(req: DraftRequest, writer: str = "template", model: Optional[str
     return template_draft(req)
 
 
-__all__ = ["DEFAULT_MODEL", "MODELS", "DraftError", "build_prompt", "claude_available", "claude_draft",
+__all__ = ["DEFAULT_MODEL", "MODELS", "available_models", "compatible_draft", "DraftError", "build_prompt", "claude_available", "claude_draft",
            "clean_draft", "write_draft"]
