@@ -164,6 +164,14 @@ _CHANNEL_ALIASES = {
     "ppc": "paid_search",
     "google ads": "paid_search",
     "social": "organic_social",
+    # Platform names people use in their own spreadsheets (paid only: "Facebook" alone is ambiguous)
+    "facebook ads": "paid_social", "meta ads": "paid_social", "instagram ads": "paid_social",
+    "linkedin ads": "paid_social", "tiktok ads": "paid_social", "pinterest ads": "paid_social",
+    "snapchat ads": "paid_social", "x ads": "paid_social", "twitter ads": "paid_social",
+    "paid facebook": "paid_social", "paid instagram": "paid_social", "paid linkedin": "paid_social",
+    "adwords": "paid_search", "bing ads": "paid_search", "microsoft ads": "paid_search",
+    "microsoft advertising": "paid_search", "performance max": "cross_network", "pmax": "cross_network",
+    "newsletter": "email", "emails": "email", "organic": "organic_search",
 }
 
 

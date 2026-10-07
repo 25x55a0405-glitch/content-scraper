@@ -14,7 +14,7 @@ import re
 from ..model import TOTAL, normalize_channel, shift_period
 from .common import (ImportError_, ImportResult, cell, col, decode, is_total_row,
                      parse_date, parse_number, parse_range_text, period_from_range,
-                     split_rows)
+                     require_single_month, split_rows)
 
 CHANNEL_COLS = ("session primary channel group", "session default channel group",
                 "first user primary channel group", "first user default channel group",
@@ -27,20 +27,25 @@ def parse_ga4(data: bytes) -> ImportResult:
     res = ImportResult(source_type="ga4")
 
     # --- header block ------------------------------------------------------ #
+    rows = [r for r in split_rows(text) if r and not (r[0].startswith("#"))]   # also detects formats
     start = end = cmp_start = cmp_end = None
     for line in text.splitlines()[:40]:
-        s = line.lstrip("#").strip()
+        s = line.lstrip("#").strip().strip(",;\t")
         low = s.lower()
+        if ":" not in s:
+            continue
+        value = parse_date(s.split(":", 1)[1])
+        if value is None:
+            continue                       # keep any date already known (e.g. the month you picked)
         if low.startswith("start date") and "comparison" not in low:
-            start = parse_date(s.split(":", 1)[1])
+            start = value
         elif low.startswith("end date") and "comparison" not in low:
-            end = parse_date(s.split(":", 1)[1])
-        elif "comparison" in low and "start" in low and ":" in s:
-            cmp_start = parse_date(s.split(":", 1)[1])
-        elif "comparison" in low and "end" in low and ":" in s:
-            cmp_end = parse_date(s.split(":", 1)[1])
-
-    rows = [r for r in split_rows(text) if r and not (r[0].startswith("#"))]
+            end = value
+        elif "comparison" in low and "start" in low:
+            cmp_start = value
+        elif "comparison" in low and "end" in low:
+            cmp_end = value
+    require_single_month(start, end, "GA4")
     hi = -1
     for i, r in enumerate(rows[:40]):
         lower = [c.lower() for c in r]
@@ -60,7 +65,7 @@ def parse_ga4(data: bytes) -> ImportResult:
     c_range = col(header, "date range")
     cols = {
         "sessions": col(header, "sessions"),
-        "users": col(header, "total users", "active users", "users"),
+        "users": col(header, "total users", "users", "active users"),
         "conversions": col(header, "key events", "conversions"),
         "revenue": col(header, "total revenue", "purchase revenue", "revenue"),
     }
@@ -80,6 +85,7 @@ def parse_ga4(data: bytes) -> ImportResult:
 
     range_period: dict[str, str] = {}
     unknown_channels: set[str] = set()
+    seen: dict[tuple, int] = {}
     for r in rows[hi + 1:]:
         if not any(r):
             break                                   # end of the first table
@@ -108,12 +114,26 @@ def parse_ga4(data: bytes) -> ImportResult:
             unknown_channels.add(name)
             scope = "other"
         res.rows_read += 1
+        seen[(period, scope)] = seen.get((period, scope), 0) + 1
         for metric, idx in cols.items():
             v = parse_number(cell(r, idx))
             if v is None:
                 continue
-            # Unknown channels are pooled into "other"; total rows are taken as given.
-            res.put(period, scope, metric, v, add=(scope == "other"))
+            # A second dimension (device, date…) repeats channels: add them up. Total rows are taken as given.
+            res.put(period, scope, metric, v, add=(scope != TOTAL))
+    repeated = {k for k, n in seen.items() if n > 1 and k[1] != TOTAL}
+    if repeated:
+        for p, scope in repeated:
+            res.periods.get(p, {}).get(scope, {}).pop("users", None)    # users can't be added across rows
+        res.warnings.append("Channels appear on more than one row (the export has a second dimension, such as "
+                            "device or date), so their rows were added together. Users were left out because "
+                            "they can't be added up.")
+        for p, rowset in res.periods.items():
+            tot = rowset.get(TOTAL, {}).get("sessions")
+            ours = sum(r.get("sessions", 0) for s, r in rowset.items() if s != TOTAL)
+            if tot and abs(tot - ours) > max(1.0, 0.01 * tot):
+                res.warnings.append(f"The channel rows add up to {ours:,.0f} sessions but the file's total says "
+                                    f"{tot:,.0f}.")
 
     if unknown_channels:
         res.warnings.append("Grouped these unrecognised channels under Other: "

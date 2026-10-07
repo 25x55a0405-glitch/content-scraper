@@ -39,8 +39,8 @@ def parse_search_console(data: bytes, period_hint: str | None = None) -> ImportR
     if dates_text is None:
         # A single CSV upload: work out which kind it is from its header.
         for name, text in files.items():
-            head = text[:400].lower()
-            if head.startswith("date,") or "\ndate," in head or head.startswith("date\t"):
+            head = text[:400].lower().lstrip("\ufeff")
+            if head.startswith(("date,", "date;", "date\t")) or "\ndate," in head or "\ndate;" in head:
                 dates_text = text
             elif "top queries" in head or head.startswith("query"):
                 queries_text = text
@@ -59,6 +59,11 @@ def parse_search_console(data: bytes, period_hint: str | None = None) -> ImportR
         raise ImportError_("Search Console's Dates file is missing its header row.")
     h = rows[hi]
     c_date, c_clicks, c_impr, c_pos = col(h, "date"), col(h, "clicks"), col(h, "impressions"), col(h, "position")
+    if c_clicks < 0 or c_impr < 0:
+        if any("clicks" in x.lower() for x in h):
+            raise ImportError_("This Search Console export compares two date ranges. Turn off the comparison, "
+                               "set the date to one month, and export again.")
+        raise ImportError_("Search Console's Dates file needs Clicks and Impressions columns.")
 
     per_month: dict[str, dict[str, float]] = {}
     days: dict[str, set[int]] = {}

@@ -8,6 +8,7 @@ These helpers absorb that so each importer only maps columns.
 
 from __future__ import annotations
 
+import contextvars
 import csv
 import io
 import re
@@ -18,6 +19,11 @@ from typing import Optional
 from ..model import MONTHS
 
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024
+
+# Per-file conventions, detected from the file itself (see detect_conventions).
+# Context variables keep them per import, so parallel uploads can't mix them up.
+DECIMAL_COMMA: contextvars.ContextVar[bool] = contextvars.ContextVar("decimal_comma", default=False)
+DATE_ORDER: contextvars.ContextVar[str] = contextvars.ContextVar("date_order", default="")   # "dmy" | "mdy" | ""
 
 
 class ImportError_(Exception):
@@ -80,7 +86,47 @@ def split_rows(text: str) -> list[list[str]]:
     elif sample.count(";") > sample.count(",") and sample.count(";") > 2:
         delim = ";"
     reader = csv.reader(io.StringIO(text), delimiter=delim)
-    return [[cell.strip() for cell in row] for row in reader]
+    rows = [[cell.strip() for cell in row] for row in reader]
+    detect_conventions(text, rows, delim)
+    return rows
+
+
+_EU_NUM = re.compile(r"^-?[£$€]?\s?(\d{1,3}(\.\d{3})+(,\d+)?|\d+,\d{1,2})\s?(%|€)?$")
+_US_NUM = re.compile(r"^-?[£$€]?\s?(\d{1,3}(,\d{3})+(\.\d+)?|\d+\.\d{1,2}|\d+\.\d{4,})\s?%?$")
+_SLASH_DATE = re.compile(r"\b(\d{1,2})/(\d{1,2})/(\d{4})\b")
+
+
+def detect_conventions(text: str, rows: list[list[str]], delim: str) -> None:
+    """Work out, from the file's own contents, its number format and date order.
+
+    European exports write 1.234,56 (often with ; between columns); US exports write
+    dates as 9/30/2026. Guessing wrong silently changes the figures, so decide from
+    evidence in the file and default to the UK/US number style and day/month dates.
+    """
+    eu = us = 0
+    for r in rows[:400]:
+        for c in r:
+            c = c.strip().strip('"')
+            if _EU_NUM.match(c):
+                eu += 1
+            elif _US_NUM.match(c):
+                us += 1
+    DECIMAL_COMMA.set(eu > us or (eu == us and eu > 0 and delim == ";"))
+    firsts, seconds, pairs = [], [], []
+    for m in _SLASH_DATE.finditer(text[:200000]):
+        a, b = int(m[1]), int(m[2])
+        firsts.append(a), seconds.append(b), pairs.append((a, b, int(m[3])))
+    order = ""
+    if any(a > 12 for a in firsts):
+        order = "dmy"
+    elif any(b > 12 for b in seconds):
+        order = "mdy"
+    elif len(set(pairs)) > 1:
+        # All ambiguous: consecutive days stay inside one month only under the right reading.
+        months_dmy = {(y, b) for a, b, y in pairs}
+        months_mdy = {(y, a) for a, b, y in pairs}
+        order = "mdy" if len(months_mdy) < len(months_dmy) else "dmy"
+    DATE_ORDER.set(order)
 
 
 # --------------------------------------------------------------------------- #
@@ -98,6 +144,8 @@ def parse_number(raw: Optional[str]) -> Optional[float]:
         return None
     negative = s.startswith("(") and s.endswith(")")
     s = s.strip("()")
+    if DECIMAL_COMMA.get():
+        s = s.replace(".", "").replace(",", ".")
     s = _NUM_CLEAN.sub("", s)
     s = s.rstrip("%")
     if s.startswith("<"):           # e.g. "< 10" anonymised
@@ -119,7 +167,8 @@ _MONTH_INDEX["sept"] = 9
 
 def parse_date(raw: str) -> Optional[date]:
     """Accepts 20260901, 2026-09-01, 01/09/2026, Sep 1, 2026, September 1, 2026, 1 Sep 2026."""
-    s = (raw or "").strip().strip('"')
+    s = (raw or "").strip().strip('"').strip(",; \t").strip('"')
+    s = re.sub(r"[ T]\d{1,2}:\d{2}(:\d{2})?.*$", "", s)      # drop a time part
     if not s:
         return None
     m = re.fullmatch(r"(\d{4})(\d{2})(\d{2})", s)
@@ -129,9 +178,13 @@ def parse_date(raw: str) -> Optional[date]:
     if m:
         return _safe_date(int(m[1]), int(m[2]), int(m[3]))
     m = re.fullmatch(r"(\d{1,2})/(\d{1,2})/(\d{4})", s)
-    if m:   # ambiguous; prefer day/month (UK) unless impossible
+    if m:   # 01/09/2026: the file's own dates decide (see detect_conventions); else day/month
         a, b, y = int(m[1]), int(m[2]), int(m[3])
-        return _safe_date(y, b, a) if b <= 12 else _safe_date(y, a, b)
+        if b > 12:
+            return _safe_date(y, a, b)
+        if a > 12:
+            return _safe_date(y, b, a)
+        return _safe_date(y, a, b) if DATE_ORDER.get() == "mdy" else _safe_date(y, b, a)
     m = re.fullmatch(r"([A-Za-z]+)\.? (\d{1,2}),? (\d{4})", s)
     if m and m[1].lower() in _MONTH_INDEX:
         return _safe_date(int(m[3]), _MONTH_INDEX[m[1].lower()], int(m[2]))
@@ -192,11 +245,18 @@ def col(header: list[str], *names: str) -> int:
     for n in names:
         if n.lower() in lower:
             return lower.index(n.lower())
+    # "Amount spent (GBP)" or "Key events (generate_lead)" — but never "Conv. value / cost".
     for n in names:
         for i, h in enumerate(lower):
-            if h.startswith(n.lower()):
+            if h.startswith(n.lower()) and h[len(n):].strip().startswith("("):
                 return i
     return -1
+
+
+def require_single_month(start: Optional[date], end: Optional[date], what: str) -> None:
+    if start and end and (start.year, start.month) != (end.year, end.month):
+        raise ImportError_(f"This {what} export covers {start.day} {start:%b %Y} to {end.day} {end:%b %Y}, which is more "
+                           f"than one calendar month. Export one month at a time (the 1st to the last day).")
 
 
 def cell(row: list[str], idx: int) -> Optional[str]:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextvars
 from typing import Optional
 
 from .common import ImportError_, ImportResult, looks_binary
@@ -35,6 +36,11 @@ PRECEDENCE = {
 
 
 def import_file(source_type: str, data: bytes, period_hint: Optional[str] = None) -> ImportResult:
+    """Read one export. Per-file conventions (number format, date order) never leak between imports."""
+    return contextvars.copy_context().run(_import_file, source_type, data, period_hint)
+
+
+def _import_file(source_type: str, data: bytes, period_hint: Optional[str] = None) -> ImportResult:
     if source_type not in SOURCES:
         raise ImportError_(f"Unknown source type: {source_type}")
     if not data:

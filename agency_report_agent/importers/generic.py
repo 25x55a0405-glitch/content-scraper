@@ -35,6 +35,11 @@ def _metric(name: str):
     return METRIC_NAMES.get(n) or (n if n in BASE_METRICS else None)
 
 
+def _additive(metric: str) -> bool:
+    """Repeated rows for one channel (several campaigns, several weeks) add up — except averages."""
+    return metric not in ("avg_position", "users")
+
+
 def parse_generic(data: bytes, period_hint: str | None = None) -> ImportResult:
     rows = [r for r in split_rows(decode(data)) if any(r)]
     res = ImportResult(source_type="generic")
@@ -70,12 +75,12 @@ def parse_generic(data: bytes, period_hint: str | None = None) -> ImportResult:
             m = _metric(cell(r, c_metric) or "")
             v = parse_number(cell(r, c_value))
             if m and v is not None:
-                res.put(p, scope, m, v)
+                res.put(p, scope, m, v, add=_additive(m))
         else:
             for i, m in metric_cols.items():
                 v = parse_number(cell(r, i))
                 if v is not None:
-                    res.put(p, scope, m, v)
+                    res.put(p, scope, m, v, add=_additive(m))
     if unknown:
         res.warnings.append("Skipped rows with channels I don't recognise: " + ", ".join(sorted(unknown))
                             + ". Use standard names like Organic Search, Paid Social, Email, Referral.")

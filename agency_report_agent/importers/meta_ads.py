@@ -8,10 +8,22 @@ adds a summary row with an empty campaign name. Everything maps to Paid Social.
 from __future__ import annotations
 
 from .common import (ImportError_, ImportResult, cell, col, decode, parse_date,
-                     parse_number, period_from_range, split_rows)
+                     parse_number, period_from_range, require_single_month, split_rows)
 
-LEAD_LIKE = ("lead", "purchase", "conversion", "registration", "contact", "schedule",
-             "submit", "subscribe", "complete", "offsite_conversion")
+# Results Meta reports for campaigns that don't aim for leads or sales.
+NOT_LEADS = ("messaging", "conversation", "post_save", "post_engagement", "link_click", "landing_page_view",
+             "reach", "impression", "video", "thruplay", "page_like", "like", "follow", "profile_visit",
+             "add_to_cart", "view_content", "initiate_checkout", "add_payment_info", "engagement", "click")
+LEAD_LIKE = ("lead", "purchase", "registration", "contact", "schedule", "submit_application",
+             "subscribe", "fb_pixel_custom", "custom_conversion", "offsite_conversion")
+
+
+def _is_lead(indicator: str) -> bool:
+    if not indicator:
+        return True
+    if any(k in indicator for k in NOT_LEADS):
+        return False
+    return any(k in indicator for k in LEAD_LIKE)
 
 
 def parse_meta_ads(data: bytes, period_hint: str | None = None) -> ImportResult:
@@ -41,17 +53,27 @@ def parse_meta_ads(data: bytes, period_hint: str | None = None) -> ImportResult:
     if ccy:
         res.extras["currency"] = ccy
 
+    # The whole file's reporting range (a daily breakdown has one row per day).
+    starts, ends = [], []
+    for r in rows[hi + 1:]:
+        if any(r) and c_start >= 0:
+            s_, e_ = parse_date(cell(r, c_start) or ""), parse_date(cell(r, c_end) or "")
+            if s_:
+                starts.append(s_)
+            if e_:
+                ends.append(e_)
     period = None
+    if starts:
+        first, last = min(starts), max(ends) if ends else None
+        require_single_month(first, last, "Meta")
+        period, w = period_from_range(first, last)
+        if w:
+            res.warnings.append(w)
     summary = None
     non_lead_results = False
     for r in rows[hi + 1:]:
         if not any(r):
             continue
-        if not period and c_start >= 0:
-            p, w = period_from_range(parse_date(cell(r, c_start) or ""), parse_date(cell(r, c_end) or ""))
-            if w:
-                res.warnings.append(w)
-            period = p
         name = (cell(r, c_name) or "").strip()
         if not name:
             summary = r                      # Meta's totals row
@@ -68,7 +90,7 @@ def parse_meta_ads(data: bytes, period_hint: str | None = None) -> ImportResult:
         results = parse_number(cell(r, c_results))
         indicator = (cell(r, c_indicator) or "").lower()
         if results is not None:
-            if not indicator or any(k in indicator for k in LEAD_LIKE):
+            if _is_lead(indicator):
                 res.put(p, "paid_social", "conversions", results, add=True)
             else:
                 non_lead_results = True

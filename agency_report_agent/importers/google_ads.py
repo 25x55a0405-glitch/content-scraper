@@ -2,19 +2,23 @@
 
 The file opens with a title line and a quoted date range, then the table, then
 "Total: …" summary rows. "Excel CSV" downloads are UTF-16 and tab-separated.
-Campaign types are mapped to channels: Display → Display, Video → Paid Video,
-everything else (Search, Performance Max, Shopping, Demand Gen) → Paid Search,
-which is how most agencies present Google Ads to clients.
+Campaign types are mapped to the channels GA4 uses for the same traffic, so
+spend lines up with GA4's conversions: Display → Display, Video → Paid Video,
+Shopping → Paid Shopping, Performance Max → Cross-network, everything else
+(Search, Demand Gen) → Paid Search.
 """
 
 from __future__ import annotations
 
-from .common import (ImportError_, ImportResult, cell, col, decode, is_total_row,
-                     parse_number, parse_range_text, period_from_range, split_rows)
+from .common import (ImportError_, ImportResult, cell, col, decode, is_total_row, parse_date,
+                     parse_number, parse_range_text, period_from_range, require_single_month, split_rows)
 
 TYPE_TO_CHANNEL = {
     "display": "display",
     "video": "paid_video",
+    "shopping": "paid_shopping",
+    "performance max": "cross_network",
+    "pmax": "cross_network",
 }
 
 
@@ -56,6 +60,17 @@ def parse_google_ads(data: bytes, period_hint: str | None = None) -> ImportResul
     c_value = col(h, "conv. value", "conversion value", "all conv. value")
     c_ccy = col(h, "currency code", "currency")
 
+    require_single_month(start, end, "Google Ads")
+    c_seg = col(h, "month", "day", "date", "week")
+    if c_seg >= 0:      # segmented by time: every row must be in the same month
+        months = set()
+        for r in rows[hi + 1:]:
+            d = parse_date(cell(r, c_seg) or "") or parse_date("1 " + (cell(r, c_seg) or ""))
+            if d:
+                months.add((d.year, d.month))
+        if len(months) > 1:
+            raise ImportError_("This Google Ads export is split across more than one month. Download one "
+                               "month at a time.")
     period, warn = period_from_range(start, end)
     if warn:
         res.warnings.append(warn)
@@ -100,6 +115,10 @@ def parse_google_ads(data: bytes, period_hint: str | None = None) -> ImportResul
 
     if res.rows_read == 0:
         raise ImportError_("The Google Ads export has no campaign rows with data.")
+    if c_type < 0:
+        res.warnings.append("There's no Campaign type column, so all spend is counted as Paid Search "
+                            "(including any Display, Video, Shopping or Performance Max). Add the column "
+                            "in Google Ads (Columns → Attributes → Campaign type) for an exact split.")
     if len(currencies) > 1:
         res.warnings.append("This export mixes currencies (" + ", ".join(sorted(currencies))
                             + "). Spend has been added together as-is — check it.")
