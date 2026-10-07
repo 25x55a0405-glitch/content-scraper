@@ -266,3 +266,33 @@ def test_currency_mismatch_is_warned(desk):
     desk.store.add_source(cid, import_file("meta_ads", meta, P), P, filename="eur.csv")
     st = desk.start(cid, P, fresh=True)
     assert any("different currencies" in w for w in st["values"]["warnings"])
+
+
+def test_unchanged_redraft_is_reported_not_claimed(desk, fake):
+    good = _good_draft(desk, "lumen-skin-clinic")
+    fake.script = [message(good), message(good)]
+    desk.start("lumen-skin-clinic", P, writer="claude", fresh=True)
+    st = _review(desk, "lumen-skin-clinic", action="request_changes", reviewer="Priya",
+                 change_request="Make the summary two sentences.")
+    v = st["values"]
+    assert st["status"] == g.NEEDS_REVIEW and "nothing changed" in v["review_message"]
+    assert any("came back unchanged" in line for line in v["log"])
+    assert not any("rewrote" in line.lower() or "after your feedback" in line.lower() for line in v["log"])
+
+
+def test_changed_redraft_clears_the_warning(desk, fake):
+    good = _good_draft(desk, "lumen-skin-clinic")
+    short = re.sub(r"## What stood out.*?(?=## Channel by channel)", "", good, flags=re.S)
+    fake.script = [message(good), message(good), message(short)]
+    desk.start("lumen-skin-clinic", P, writer="claude", fresh=True)
+    _review(desk, "lumen-skin-clinic", action="request_changes", reviewer="P", change_request="Shorter")
+    st = _review(desk, "lumen-skin-clinic", action="request_changes", reviewer="P", change_request="Drop What stood out")
+    assert st["values"]["review_message"] == "" and "What stood out" not in st["values"]["draft"]
+
+
+def test_first_draft_never_mentions_feedback(desk):
+    st = desk.start("kestrel-accounting", P)
+    v = st["values"]
+    assert not v.get("review_message") and not v.get("change_request")
+    assert not any("feedback" in line.lower() or "rewrote" in line.lower() for line in v["log"])
+    assert "feedback" not in v["draft"].lower()

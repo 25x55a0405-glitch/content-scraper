@@ -195,7 +195,14 @@ def build_graph(store: Store, checkpointer=None):
         line = f"Draft {attempts + 1} written by {what}"
         if res.fallback_reason:
             line += f" ({res.fallback_reason})"
-        return {"draft": res.text, "draft_info": info, "attempts": attempts + 1, "log": [line + "."]}
+        update = {"draft": res.text, "draft_info": info, "attempts": attempts + 1, "log": [line + "."],
+                  "review_message": ""}
+        if state.get("change_request") and state.get("draft") and \
+                res.text.split() == state["draft"].split():
+            update["review_message"] = ("The writer returned the same text, so nothing changed. Rephrase the "
+                                        "request, or edit the draft yourself.")
+            update["log"] = [line + ". It came back unchanged."]
+        return update
 
     # ----------------------------------------------------------------- fact_check
     def fact_check(state: RunState) -> dict:

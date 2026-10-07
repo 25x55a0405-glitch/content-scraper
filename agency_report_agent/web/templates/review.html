@@ -13,6 +13,7 @@
   </div>
 </div>
 
+{% if v.review_message %}<div class="flash warn" role="alert">{{ v.review_message }}</div>{% endif %}
 {% if v.draft_info.fallback_reason %}<div class="flash warn">Claude wasn't used for this draft: {{ v.draft_info.fallback_reason }}</div>{% endif %}
 
 {% if ver.issues %}
