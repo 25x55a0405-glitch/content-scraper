@@ -131,6 +131,19 @@ def build_graph(store: Store, checkpointer=None):
         if "ga4" not in types and "generic" not in types and "manual" not in types:
             warnings.append("No GA4 export for this month: sessions and conversions come only from the ad "
                             "platforms, so organic and direct traffic are missing.")
+        agency_ccy = store.agency().get("currency", "GBP")
+        ccys = {SOURCE_NAMES.get(x["type"], x["type"]): (x.get("extras") or {}).get("currency") for x in sources
+                if (x.get("extras") or {}).get("currency")}
+        if len({c for c in ccys.values()}) > 1:
+            warnings.append("The files use different currencies (" + ", ".join(f"{k}: {v}" for k, v in ccys.items())
+                            + "). Spend has been added together as-is, so totals and cost per "
+                            + "conversion are wrong. Export them in one currency.")
+        else:
+            for name, ccy in ccys.items():
+                if ccy.upper() != agency_ccy.upper():
+                    warnings.append(f"{name} is in {ccy.upper()} but your agency is set to {agency_ccy}. The report "
+                                    f"will show these amounts in {agency_ccy}; change the currency in Settings or "
+                                    f"re-export in {agency_ccy}.")
         for s in sources:
             for w in s.get("warnings", []):
                 warnings.append(f"{SOURCE_NAMES.get(s['type'], s['type'])}: {w}")

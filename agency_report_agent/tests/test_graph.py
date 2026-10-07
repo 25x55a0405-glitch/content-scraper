@@ -251,3 +251,18 @@ def test_claude_outage_falls_back_and_says_why(desk, fake):
     assert st["status"] == g.NEEDS_REVIEW and v["draft_info"]["writer"] == "template"
     assert "busy" in v["draft_info"]["fallback_reason"]
     assert any("template writer" in line for line in v["log"])
+
+
+def test_currency_mismatch_is_warned(desk):
+    from agency_report_agent.importers import import_file
+    cid = "summit-fitness"
+    ads = (b'Campaign report\n"September 1, 2026 - September 30, 2026"\nCampaign,Currency code,Clicks,Impr.,Cost\n'
+           b"Brand,USD,100,1000,500.00\n")
+    desk.store.add_source(cid, import_file("google_ads", ads, P), P, filename="usd.csv")
+    st = desk.start(cid, P, fresh=True)
+    assert any("USD" in w and "GBP" in w for w in st["values"]["warnings"])
+    meta = (b"Reporting starts,Reporting ends,Campaign name,Results,Result indicator,Amount spent (EUR)\n"
+            b"2026-09-01,2026-09-30,A,5,actions:offsite_conversion.fb_pixel_lead,300\n")
+    desk.store.add_source(cid, import_file("meta_ads", meta, P), P, filename="eur.csv")
+    st = desk.start(cid, P, fresh=True)
+    assert any("different currencies" in w for w in st["values"]["warnings"])
