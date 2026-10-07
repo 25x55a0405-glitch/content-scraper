@@ -1,150 +1,199 @@
 # Report Desk
 
-An AI agent that writes a marketing agency's monthly client reports, checks
-every figure it wrote against the real data, flags anything unusual for a
-human, and waits for approval before a single report goes out.
+Report Desk writes a marketing agency's monthly client reports from the
+platform exports the agency already downloads, checks every figure in every
+sentence against that data, flags unusual movements for a person to explain,
+and waits for approval before a report exists.
 
-Built with **LangGraph** (the agent) and **LangChain** (the writing), with a
-web app the agency actually uses.
+- **Inputs:** GA4 Traffic acquisition, Google Ads campaign reports, Search
+  Console performance exports and Meta Ads tables, as they download (CSV,
+  Excel-CSV, Search Console zip), or any simple CSV, or figures typed in.
+- **Output:** a branded HTML report and an A4 PDF in the agency's name, logo
+  and colour. Report Desk itself never appears on it.
+- **The promise:** no figure reaches a client unless it matches the data, or a
+  named person has checked it and confirmed it (which is logged).
 
-**It runs for free, with no API key.** You can see the whole thing working in
-about two minutes.
-
-![Dashboard](../docs/screen-dashboard.png)
-
----
-
-## The one-line version
-
-> It writes your monthly client reports, double-checks its own numbers, and
-> waits for your approval before anything goes out.
-
-## What happens, in plain English
-
-Every month, the agent pulls each client's figures, writes the report summary,
-then checks every number it just wrote against the real data. If it got one
-wrong, it rewrites that part and checks again. Anything unusual — like social
-traffic nearly doubling — it flags for the agency to explain, because only they
-know why. Then it stops and waits: nothing reaches a client until someone reads
-it and clicks approve.
+![Month dashboard](../docs/screen-dashboard.png)
 
 ---
 
-## Run it (free, about 2 minutes)
+## What happens each month
 
-```bash
-pip install langgraph langgraph-checkpoint-sqlite fastapi uvicorn jinja2 python-multipart
-python -m agency_report_agent.web
-```
+1. **Upload.** For each client, upload that month's exports (or let the
+   demo agency show you). Each file is read in its real format, and the
+   checks happen on upload: wrong month, two months in one file, an Excel file
+   instead of CSV, a Search Console export without the dates file, and an
+   incomplete month all come with a plain-English explanation.
+2. **Combine.** Sources are merged by rule: GA4 owns sessions, conversions
+   and revenue; ad platforms own spend; figures typed in by hand override
+   everything. When sources disagree by more than 5% (Google Ads conversions
+   vs GA4, for example) the reviewer is told which figure was used.
+3. **Fact sheet.** Every figure the report may state is computed: each
+   channel's levels, month-on-month and year-on-year changes, differences,
+   shares of the total, cost per conversion, conversion rate, ROAS, and
+   progress against target. Each one gets an ID.
+4. **Unusual movements.** Large swings with enough volume behind them are
+   flagged: a channel that stopped (a paused Meta campaign), a spike, a drop,
+   a target miss. Small-number noise (1 booking becoming 2) is ignored.
+5. **Draft.** The template writer (free, no key) or Claude writes the
+   narrative, citing a fact ID after every figure.
+6. **Fact check.** Every figure in the draft is read the way a client reads
+   it: *which channel, which metric, which month, which direction, and is it
+   a level, a change, a share or a target.* "Organic search delivered 143
+   enquiries" fails if 143 was paid search. "Sessions rose 8.6%" fails if
+   they fell 8.6%. "Social drove 20 enquiries this month" fails if 20 was
+   last month. If Claude got something wrong, it gets the exact sentences back
+   and rewrites only those (up to three drafts), then a person sees the result.
+7. **Review.** The reviewer sees the draft with every checked figure
+   underlined (hover for its source) and any problem highlighted with the
+   correct figure. They can edit (re-checked instantly), add explanations for
+   unusual movements and next month's plans, ask Claude for changes, reject
+   for this month, or approve.
+8. **Report.** Approval renders the branded report and PDF as a new version.
+   Everything (uploads, drafts, edits, approvals, confirmed figures) is in the
+   activity log.
 
-Open **http://127.0.0.1:8000**, tick **Demo the fact-check**, and press
-**Run 6 reports**.
-
-Ticking that box plants one wrong figure in each first draft on purpose, so you
-can watch the agent catch it and correct itself. Open any client and look at the
-**Fact-check trail** — that is the part worth recording for a demo video.
-
-| Screen | What it is |
-|---|---|
-| ![Review](../docs/screen-review.png) | **Review** — the draft, the fact-check trail, and the things only a human can explain |
-| ![Report](../docs/screen-client-report.png) | **The report** — what the agency sends, in the agency's own brand |
-
-### Command line instead
-
-```bash
-python -m agency_report_agent.cli --demo-glitch      # draft and fact-check all clients
-python -m agency_report_agent.cli --approve-all      # also approve and produce the reports
-python -m agency_report_agent.cli --start-over       # begin a fresh round
-```
-
-### The quality checks you show a client
-
-```bash
-python -m agency_report_agent.tests.run_evals
-```
-
-This proves four things: it spots made-up figures, it always stops for a human,
-rejecting a draft really does stop it, and it corrects its own mistakes. A
-passing sheet answers the question every prospect actually has — *can I trust
-what it writes?*
-
-### Live mode, with Claude writing the drafts
-
-```bash
-pip install langchain-anthropic python-dotenv
-cp agency_report_agent/.env.example agency_report_agent/.env   # add your API key
-REPORT_DESK_LIVE=1 python -m agency_report_agent.web
-```
-
-One report costs well under a cent. The default model is `claude-opus-5-5`; set
-`AGENT_MODEL=claude-haiku-4-5` in `.env` to cut that by roughly 20x.
+![Review screen](../docs/screen-review.png)
 
 ---
 
-## How it is built
+## Try it in two minutes
 
-The agent is a **graph**, not a script: it can go backwards, take different
-paths, and pause mid-run to wait for a person.
-
-```
- fetch_data ──(got the data?)──> detect_anomalies ──> draft_commentary
-     │  ▲ no                                                │
-     └──┘ retry (max 2)                                     ▼
-                                                     verify_numbers
-                                                      │          ▲
-                   (every figure correct?) no, rewrite│          │  loop, max 3
-                               ┌──────────────────────┘          │
-                               ▼                                 │
-                        draft_commentary ────────────────────────┘
-                               │ yes
-                               ▼
-                        human_approval   ← the run PAUSES here, saved to disk
-                               │
-                    approved   │   sent back for changes
-                       ┌───────┴────────┐
-                       ▼                ▼
-                render_report          stop
+```bash
+pip install -r agency_report_agent/requirements.txt
+python -m playwright install chromium          # for PDF export
+python -m agency_report_agent.web               # http://127.0.0.1:8000
 ```
 
-| Step | What it does | Why it is built this way |
+Sign in with any name (no password is needed on your own computer), then
+choose **Load the demo agency** and **Draft 12 reports**.
+
+The demo agency, Northstar Digital, has twelve clients built to exercise what
+a real month throws at you: a full GA4 + Ads + Search Console + Meta stack, a
+law firm whose Google Ads conversions disagree with GA4, an accountant with
+no paid media, a vet whose Meta campaign was paused, an e-commerce shop with
+revenue and ROAS, a brand-new client with no history, a GA4 export with the
+old "Conversions" header and a UTF-16 Excel export from Google Ads, a car
+dealer with six-figure traffic, and a yoga studio with single-digit bookings.
+
+---
+
+## Running it for a team
+
+```bash
+export REPORT_DESK_PASSWORD='a long team password'
+export REPORT_DESK_HOME=/srv/report-desk              # where all data lives
+export ANTHROPIC_API_KEY=...                          # optional: lets Claude write drafts
+python -m agency_report_agent.web --host 0.0.0.0 --port 8000
+```
+
+- Put it behind HTTPS (Caddy, nginx, or your host's proxy) and set
+  `REPORT_DESK_SECURE_COOKIES=1`.
+- Without `REPORT_DESK_PASSWORD` the app refuses to listen on the network.
+- Everyone signs in with their own name and the team password; names are
+  recorded against every action.
+- **Back up `REPORT_DESK_HOME`.** It holds the clients, every uploaded file,
+  approved reports, the activity log and in-progress reviews (which survive
+  restarts).
+
+### Claude or the template writer
+
+Settings → *Who writes the first draft*.
+
+| | Template writer | Claude |
 |---|---|---|
-| `fetch_data` | Loads the client's figures | Everything downstream must be grounded in real data. Retries, because real data sources fail. |
-| `detect_anomalies` | Flags swings over 40% | **Plain arithmetic, no AI** — a rule is enough, and code cannot hallucinate. |
-| `draft_commentary` | Writes the summary | The only step that uses AI, because this is the only step needing judgement. |
-| `verify_numbers` | Checks every figure against the source | **Plain arithmetic again.** A wrong figure in a client report is the worst thing this product could do. |
-| `human_approval` | Pauses for a person | The agency's name is on the report. Nothing is sent without a human. |
-| `render_report` | Builds the branded report | The data table is built **from the source data, never from the AI's text**, so the numbers are always exactly right. |
+| Cost | Free | Pay per draft through your Anthropic account |
+| Needs | Nothing | `ANTHROPIC_API_KEY` on the server |
+| Reads like | Clear, consistent, a little formulaic | Your best account manager, in your house voice |
+| Explains movements | Uses the reviewer's explanations | Uses the client context and reviewer's explanations |
+| "Make it shorter", etc. | No (edit the text directly) | Yes |
+| Fact checked | Yes | Yes, and rewritten until it passes (max 3 drafts) |
 
-The guiding principle: **use AI only where judgement is needed, and plain code
-wherever rules are enough.** Three of the five working steps use no AI at all.
-
-### Files
-
-| File | What it holds |
-|---|---|
-| `graph.py` | The graph: the steps, the loop, the branches |
-| `nodes.py` | What each step actually does |
-| `state.py` | The shared record that travels between steps |
-| `metrics.py` | The arithmetic and the fact-checking rules |
-| `llm.py` | The only place Claude is called |
-| `render.py` | The branded client report |
-| `batch.py` | Running every client and tracking each one |
-| `web/` | The app: dashboard, review screen, report viewer |
-| `tests/` | The quality checks |
+The model can be chosen in Settings: Claude Opus 5.5 (best writing), Sonnet
+5.5 (balanced) or Haiku 4.5 (fastest and cheapest). If Claude is unavailable
+for any reason (no key, an outage, a refusal), the template writer drafts that
+report instead and the review screen says why.
 
 ---
 
-## Honest limitations
+## Where each export comes from
 
-- **Data comes from JSON files**, not live GA4 / Search Console. Connecting
-  those is the next build, and must run on the agency's own credentials.
-- **The fact-checker** validates figures from the data, month-on-month changes
-  and conversion rates. A draft citing some other derived metric gets flagged;
-  add it to the allowed sets in `metrics.py` if you want it permitted.
-- **Approval happens in this app.** Moving it into Slack is a natural next step.
-- **The "hours saved" figure** assumes roughly 3 hours per client per month,
-  which came from vendor case studies. Check it against the agency's real
-  numbers before quoting it to them.
-- **This is a working demo, not audited production software.** Before a paying
-  client goes live: run a security review, keep every credential on the
-  client's own accounts, and set a spend cap on the API key.
+| Platform | Export |
+|---|---|
+| GA4 | Reports → Acquisition → **Traffic acquisition**, date range = the month → Share → Download CSV |
+| Google Ads | **Campaigns**, date range = the month → Download → CSV (or Excel .csv) |
+| Search Console | Performance → Search results → date = the month → Export → Download CSV (zip) |
+| Meta Ads | Ads Manager → **Campaigns**, the month → Reports → Export table data → CSV |
+| Anything else | A CSV with `channel` plus any of `sessions, conversions, spend, revenue, clicks, impressions`, or `channel, metric, value` (optional `period` column) |
+
+---
+
+## Command line
+
+```bash
+python -m agency_report_agent demo                                   # load the demo agency
+python -m agency_report_agent import seaview-physio 2026-09 ga4 traffic.csv
+python -m agency_report_agent draft 2026-09                          # draft every client with data
+python -m agency_report_agent status 2026-09
+python -m agency_report_agent check seaview-physio 2026-09 draft.md  # fact-check any text
+```
+
+`check` is useful on its own: paste in a report your team wrote by hand and it
+lists every figure that doesn't match the data.
+
+---
+
+## How it's built
+
+```
+importers/      real export formats → figures per channel and month
+store.py        the workspace: clients, sources, merge rules, reports, audit log
+facts.py        the fact sheet: every allowed figure, with an ID
+anomalies.py    unusual movements (arithmetic only)
+drafting.py     the template writer
+llm.py          the Claude writer (official Anthropic SDK)
+verify.py       the claim-level fact checker
+graph.py        the LangGraph agent: load → facts → draft ⇄ check → review → render
+desk.py         runs the agent per client and month; parallel drafting; persistence
+render.py       the branded report and PDF
+web/            the app the team uses
+```
+
+The agent is a LangGraph state machine with a SQLite checkpointer. It pauses
+at review with `interrupt()` and resumes with the reviewer's decision, so a
+report waiting for approval survives a restart, and two people clicking
+Approve at once produce one report.
+
+## Tests
+
+```bash
+python -m pytest agency_report_agent/tests -q
+```
+
+About 400 tests, including:
+
+- every export of every demo client and month imported and compared with
+  ground truth computed independently of the importers;
+- every fact of every demo client written out as a sentence, true (must pass)
+  and mutated with the wrong number, channel, direction or month (must be
+  caught): about 7,000 checks;
+- hand-written account-manager prose, true and subtly wrong;
+- the Claude writer through the real SDK against a local stand-in of the API:
+  overloads and retries, refusals, truncation, bad keys, rewrite loops;
+- a full agency month over HTTP: 12 clients created through the forms, every
+  file uploaded, every report drafted and approved, and every figure in every
+  report table, tile and PDF compared with the ground truth.
+
+## Limits, honestly
+
+- The fact checker understands numbers in context (channel, metric, month,
+  direction, kind). It doesn't judge claims without numbers beyond direction
+  ("paid search sessions dropped"), and it can't know whether an explanation
+  is true: explanations come from the reviewer or the client context, and a
+  person approves every report.
+- Monthly reporting only (calendar months). Weekly or custom ranges are not
+  supported yet.
+- Exports are uploaded by hand. Direct connections to GA4, Google Ads and
+  Meta are the next step; the importers and everything after them won't
+  change when they arrive.
+- One team password per installation; no per-client permissions yet.

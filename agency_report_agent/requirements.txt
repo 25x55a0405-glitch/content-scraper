@@ -1,13 +1,20 @@
-# The agent itself (free mock mode needs only these two):
-langgraph>=1.0
-langgraph-checkpoint-sqlite>=2.0
+# Agent and data
+langgraph>=1.2
+langgraph-checkpoint-sqlite>=3.0
 
-# The web app:
+# Web app
 fastapi>=0.110
 uvicorn>=0.27
 jinja2>=3.1
 python-multipart>=0.0.9
+itsdangerous>=2.1
 
-# Live mode — only needed if you want Claude to write the drafts:
-langchain-anthropic>=0.3.0
-python-dotenv>=1.0.0
+# PDF export (then: python -m playwright install chromium)
+playwright>=1.40
+
+# Claude as the writer (optional — the template writer needs no key)
+anthropic>=1.0
+
+# Tests
+pytest>=8
+httpx>=0.27
