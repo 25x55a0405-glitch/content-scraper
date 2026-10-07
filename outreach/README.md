@@ -35,15 +35,16 @@ person typed it. Everything below is built for that.
 > Most agencies around your size lose two to three days a month to client reporting:
 > pulling the numbers, writing the commentary, checking it before it goes out.
 >
-> I've built something that does the first draft. It pulls each client's analytics,
-> writes the summary in your agency's voice, then checks every figure it wrote against
-> the source data — if it got one wrong, it rewrites it. Nothing reaches a client until
-> someone on your team approves it.
+> I've built something that does the first draft. It works from the GA4, Google Ads,
+> Search Console and Meta exports you already download (no access to your accounts),
+> writes each client's report in your agency's voice, and checks every figure in every
+> sentence against the data before anyone sees it. Nothing reaches a client until
+> someone on your team approves it, and the report goes out under your name.
 >
-> Ninety seconds of it running across six clients: {{video_link}}
+> Ninety seconds of it running a month for twelve clients: {{video_link}}
 >
-> If it looks useful I'll set it up for three of your clients for a fixed {{price}}. If
-> the drafts aren't usable, you don't pay.
+> If it looks useful, I'll run it on three of your clients for one reporting cycle for
+> {{price}}, invoiced after you've seen the drafts.
 >
 > Worth a look?
 >
@@ -75,10 +76,14 @@ person typed it. Everything below is built for that.
 > I'll leave it here — I don't want to be another unread follow-up.
 >
 > If client reporting ever becomes the bottleneck, the offer stands: three of your
-> clients, fixed {{price}}, refunded if the drafts aren't usable.
+> clients for one reporting cycle, {{price}}, invoiced after you've seen the drafts.
 >
 > All the best,
 > {{your name}}
+
+**{{price}}:** £500 for UK agencies, $650 for US agencies. Don't quote the rollout price
+(£2,000 setup + £400/month) in cold email; that conversation happens after the pilot.
+Never promise refunds, results or savings figures you can't prove.
 
 **Three emails, then stop.** More than that damages your domain and your name.
 
